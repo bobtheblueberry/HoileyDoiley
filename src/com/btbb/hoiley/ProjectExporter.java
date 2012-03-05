@@ -1,0 +1,839 @@
+/*
+ The MIT License
+
+ Copyright (c) 2012 Serge Humphrey<bobtheblueberry@gmail.com>
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ THE SOFTWARE.
+ */
+package com.btbb.hoiley;
+
+import static org.lateralgm.main.Util.deRef;
+
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.BufferedOutputStream;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.Enumeration;
+import java.util.Iterator;
+import java.util.List;
+
+import javax.imageio.ImageIO;
+
+import org.lateralgm.components.impl.ResNode;
+import org.lateralgm.file.GmStreamEncoder;
+import org.lateralgm.file.ResourceList;
+import org.lateralgm.main.LGM;
+import org.lateralgm.main.Util;
+import org.lateralgm.resources.Background;
+import org.lateralgm.resources.Background.PBackground;
+import org.lateralgm.resources.Font;
+import org.lateralgm.resources.Font.PFont;
+import org.lateralgm.resources.GameInformation;
+import org.lateralgm.resources.GameInformation.PGameInformation;
+import org.lateralgm.resources.GmObject;
+import org.lateralgm.resources.GmObject.PGmObject;
+import org.lateralgm.resources.InstantiableResource;
+import org.lateralgm.resources.Path;
+import org.lateralgm.resources.Path.PPath;
+import org.lateralgm.resources.Resource;
+import org.lateralgm.resources.ResourceReference;
+import org.lateralgm.resources.Room;
+import org.lateralgm.resources.Room.PRoom;
+import org.lateralgm.resources.Script;
+import org.lateralgm.resources.Sound;
+import org.lateralgm.resources.Sound.PSound;
+import org.lateralgm.resources.Sound.SoundKind;
+import org.lateralgm.resources.Sprite;
+import org.lateralgm.resources.Sprite.BBMode;
+import org.lateralgm.resources.Sprite.MaskShape;
+import org.lateralgm.resources.Sprite.PSprite;
+import org.lateralgm.resources.Timeline;
+import org.lateralgm.resources.library.LibAction;
+import org.lateralgm.resources.sub.Action;
+import org.lateralgm.resources.sub.Argument;
+import org.lateralgm.resources.sub.BackgroundDef;
+import org.lateralgm.resources.sub.BackgroundDef.PBackgroundDef;
+import org.lateralgm.resources.sub.Event;
+import org.lateralgm.resources.sub.Instance;
+import org.lateralgm.resources.sub.Instance.PInstance;
+import org.lateralgm.resources.sub.MainEvent;
+import org.lateralgm.resources.sub.Moment;
+import org.lateralgm.resources.sub.PathPoint;
+import org.lateralgm.resources.sub.Tile;
+import org.lateralgm.resources.sub.Tile.PTile;
+import org.lateralgm.resources.sub.View;
+import org.lateralgm.resources.sub.View.PView;
+import org.lateralgm.util.PropertyMap;
+
+public class ProjectExporter {
+
+    private int action_index = 0;
+    private int action_code_index = 0;
+    private int iccode_index = 0;
+    private File actionDir;
+    private File codeDir;
+
+    public ProjectExporter() {
+
+    }
+
+    public void export() {
+        // Export stuff
+
+        File parentdir = new File("RuneroGame/");
+        parentdir.mkdir();
+
+        actionDir = new File(parentdir, "actions");
+        actionDir.mkdir();
+        codeDir = new File(parentdir, "code");
+        codeDir.mkdir();
+
+        // Write Sprites
+        exportSprites(parentdir);
+        // Write Backgrounds
+        exportBackgrounds(parentdir);
+        // Write Sounds
+        exportSounds(parentdir);
+        // Write Paths?
+        exportPaths(parentdir);
+        // Write Scripts
+        exportScripts(parentdir);
+        // Write Fonts
+        exportFonts(parentdir);
+        // Write Timelines
+        exportTimelines(parentdir);
+        // Write Objects
+        exportGmObjects(parentdir);
+        // Write Rooms
+        exportRooms(parentdir);
+        // Write Game Information
+        exportGameInfo(parentdir);
+        // Write Global settings
+        exportSettings(parentdir);
+    }
+
+    private void exportSprites(File parentdir) {
+        File sprDir = new File(parentdir, "sprites");
+        sprDir.mkdir();
+        ResourceList<Sprite> sprites = LGM.currentFile.resMap.getList(Sprite.class);
+        Iterator<Sprite> sprI = sprites.iterator();
+
+        while (sprI.hasNext()) {
+            String subimgs = "";
+            Sprite s = sprI.next();
+            if (s.subImages.isEmpty()) {
+                System.out.println(s + " has no subimgs");
+            } else {
+                int count = 0;
+                for (int i = 0; i < s.subImages.size(); i++) {
+                    File imf = new File(sprDir, s.getName() + "_sub" + count++ + ".png");
+                    try {
+                        // Don't write original image, write a transparent
+                        // version (if it is transparent)
+                        BufferedImage image = s.subImages.get(i);
+                        if ((Boolean) s.get(PSprite.TRANSPARENT))
+                            image = Util.getTransparentIcon(image);
+                        ImageIO.write(image, "PNG", imf);
+                        System.out.println("Wrote PNG " + imf);
+                    } catch (IOException exc) {
+                        exc.printStackTrace();
+                    }
+                    subimgs = subimgs + imf.getName() + ((i + 1 < s.subImages.size()) ? "," : "");
+                }
+            }
+            // TRANSPARENT,SHAPE,ALPHA_TOLERANCE,SEPARATE_MASK,SMOOTH_EDGES,PRELOAD,ORIGIN_X,ORIGIN_Y,
+            // BB_MODE,BB_LEFT,BB_RIGHT,BB_TOP,BB_BOTTOM
+            boolean transparent = s.properties.get(PSprite.TRANSPARENT);
+            MaskShape shape = s.properties.get(PSprite.SHAPE);
+            int alpha = s.properties.get(PSprite.ALPHA_TOLERANCE);
+            boolean mask = s.properties.get(PSprite.SEPARATE_MASK);
+            boolean smooth = s.properties.get(PSprite.SMOOTH_EDGES);
+            boolean preload = s.properties.get(PSprite.PRELOAD);
+            int x = s.properties.get(PSprite.ORIGIN_X);
+            int y = s.properties.get(PSprite.ORIGIN_Y);
+            BBMode mode = s.properties.get(PSprite.BB_MODE);
+            int left = s.properties.get(PSprite.BB_LEFT);
+            int right = s.properties.get(PSprite.BB_RIGHT);
+            int top = s.properties.get(PSprite.BB_TOP);
+            int bottom = s.properties.get(PSprite.BB_BOTTOM);
+
+            File f = new File(sprDir, s.getName() + ".dat");
+            PrintWriter ps;
+            try {
+                ps = new PrintWriter(f);
+
+                ps.println(s.getName());
+                ps.println(s.getId());
+                ps.println(transparent);
+                if (shape == MaskShape.DIAMOND) {
+                    ps.println("DIAMOND");
+                } else if (shape == MaskShape.DISK) {
+                    ps.println("DISK");
+                } else if (shape == MaskShape.PRECISE) {
+                    ps.println("PRECISE");
+                } else if (shape == MaskShape.RECTANGLE) {
+                    ps.println("RECTANGLE");
+                }
+                ps.println(alpha);
+                ps.println(mask);
+                ps.println(smooth);
+                ps.println(preload);
+                ps.println(x);
+                ps.println(y);
+                if (mode == BBMode.AUTO) {
+                    ps.println("AUTO");
+                } else if (mode == BBMode.FULL) {
+                    ps.println("FULL");
+                } else if (mode == BBMode.MANUAL) {
+                    ps.println("MANUAL");
+                }
+                ps.println(left);
+                ps.println(right);
+                ps.println(top);
+                ps.println(bottom);
+                ps.println(subimgs);
+                ps.close();
+                System.out.println("Wrote " + f);
+
+            } catch (FileNotFoundException e) {
+                System.err.println("Error, can't write sprite " + f);
+            }
+        }
+    }
+
+    private void exportSounds(File parentdir) {
+
+        File sndDir = new File(parentdir, "sounds");
+        sndDir.mkdir();
+        ResourceList<Sound> sounds = LGM.currentFile.resMap.getList(Sound.class);
+        Iterator<Sound> sndI = sounds.iterator();
+        while (sndI.hasNext()) {
+            Sound s = sndI.next();
+            if (s.data == null || s.data.length < 1) {
+                continue;
+            }
+            PropertyMap<PSound> map = s.properties;
+            String name = s.getName() + map.get(PSound.FILE_TYPE);
+            File sf = new File(sndDir, name);
+            try {
+                BufferedOutputStream w = new BufferedOutputStream(new FileOutputStream(sf));
+                w.write(s.data);
+                w.close();
+                System.out.println("Wrote sound " + sf);
+            } catch (FileNotFoundException exc) {
+                System.err.println("Can't open file " + sf);
+            } catch (IOException exc) {
+                System.err.println("Error writing sound " + sf.getName());
+                exc.printStackTrace();
+            }
+
+            // KIND,FILE_TYPE,FILE_NAME,CHORUS,ECHO,FLANGER,GARGLE,REVERB,VOLUME,PAN,PRELOAD
+            SoundKind kind = s.properties.get(PSound.KIND);
+            String file_type = s.properties.get(PSound.FILE_TYPE);
+            String file_name = s.properties.get(PSound.FILE_NAME);
+            boolean chorus = s.properties.get(PSound.CHORUS);
+            boolean echo = s.properties.get(PSound.ECHO);
+            boolean flanger = s.properties.get(PSound.FLANGER);
+            boolean gargle = s.properties.get(PSound.GARGLE);
+            boolean reverb = s.properties.get(PSound.REVERB);
+            double volume = s.properties.get(PSound.VOLUME);
+            double pan = s.properties.get(PSound.PAN);
+            boolean preload = s.properties.get(PSound.PRELOAD);
+
+            File data = new File(sndDir, s.getName() + ".dat");
+            try {
+                PrintWriter ps = new PrintWriter(data);
+
+                ps.println(s.getName());
+                ps.println(s.getId());
+                if (kind == SoundKind.NORMAL) {
+                    ps.println("NORMAL");
+                } else if (kind == SoundKind.MULTIMEDIA) {
+                    ps.println("MULTIMEDIA");
+                } else if (kind == SoundKind.BACKGROUND) {
+                    ps.println("BACKGROUND");
+                } else if (kind == SoundKind.SPATIAL) {
+                    ps.println("SPATIAL");
+                }
+                ps.println(file_type);
+                ps.println(file_name);
+                ps.println(chorus);
+                ps.println(echo);
+                ps.println(flanger);
+                ps.println(gargle);
+                ps.println(reverb);
+                ps.println(volume);
+                ps.println(pan);
+                ps.println(preload);
+                ps.println(sf.getName());
+
+                ps.close();
+            } catch (FileNotFoundException e) {
+                System.err.println("Error writing sound data " + data);
+            }
+
+        }
+    }
+
+    private void exportBackgrounds(File parentdir) {
+        File bgDir = new File(parentdir, "backgrounds");
+        bgDir.mkdir();
+        ResourceList<Background> backgrounds = LGM.currentFile.resMap.getList(Background.class);
+        Iterator<Background> bgI = backgrounds.iterator();
+        while (bgI.hasNext()) {
+            Background b = bgI.next();
+            if (b.getBackgroundImage() == null) {
+                continue;
+            }
+            File bf = new File(bgDir, b.getName() + ".png");
+            try {
+                ImageIO.write(b.getBackgroundImage(), "PNG", bf);
+                System.out.println("Wrote background " + bf);
+            } catch (FileNotFoundException exc) {
+                System.err.println("Can't open file " + bf);
+            } catch (IOException exc) {
+                System.err.println("Error writing sound " + bf.getName());
+                exc.printStackTrace();
+            }
+
+            // TRANSPARENT,SMOOTH_EDGES,PRELOAD,USE_AS_TILESET,TILE_WIDTH,
+            // TILE_HEIGHT,H_OFFSET,V_OFFSET,H_SEP, V_SEP
+            boolean transparent = b.properties.get(PBackground.TRANSPARENT);
+            boolean smooth = b.properties.get(PBackground.SMOOTH_EDGES);
+            boolean preload = b.properties.get(PBackground.PRELOAD);
+            boolean tileset = b.properties.get(PBackground.USE_AS_TILESET);
+            int tile_width = b.properties.get(PBackground.TILE_WIDTH);
+            int tile_height = b.properties.get(PBackground.TILE_HEIGHT);
+            int h_offset = b.properties.get(PBackground.H_OFFSET);
+            int v_offset = b.properties.get(PBackground.V_OFFSET);
+            int h_sep = b.properties.get(PBackground.H_SEP);
+            int v_sep = b.properties.get(PBackground.V_SEP);
+
+            File f = new File(bgDir, b.getName() + ".dat");
+            try {
+                PrintWriter s = new PrintWriter(f);
+                s.println(b.getName());
+                s.println(b.getId());
+                s.println(transparent);
+                s.println(smooth);
+                s.println(preload);
+                s.println(tileset);
+                s.println(tile_width);
+                s.println(tile_height);
+                s.println(h_offset);
+                s.println(v_offset);
+                s.println(h_sep);
+                s.println(v_sep);
+                s.println(bf.getName());
+
+                s.close();
+            } catch (FileNotFoundException exc) {
+                System.err.println("Error writing background data for file " + f);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void exportPaths(File parentdir) {
+        File pathDir = new File(parentdir, "paths");
+        pathDir.mkdir();
+        ResourceList<Path> paths = LGM.currentFile.resMap.getList(Path.class);
+        Iterator<Path> pathI = paths.iterator();
+        while (pathI.hasNext()) {
+            Path p = pathI.next();
+            File f = new File(pathDir, p.getName() + ".dat");
+            // SMOOTH,CLOSED,PRECISION,BACKGROUND_ROOM,SNAP_X,SNAP_Y
+            boolean smooth = p.properties.get(PPath.SMOOTH);
+            boolean closed = p.properties.get(PPath.CLOSED);
+            int precision = p.properties.get(PPath.PRECISION);
+            String background_room = "";
+            ResourceReference<?> ref = p.properties.get(PPath.BACKGROUND_ROOM);
+            if (ref.get() instanceof Room) {
+                background_room = ((ResourceReference<Room>) ref).get().getName();
+            }
+
+            int snapX = p.properties.get(PPath.SNAP_X);
+            int snapY = p.properties.get(PPath.SNAP_Y);
+            int points = p.points.size();
+
+            PrintWriter s;
+            try {
+                s = new PrintWriter(f);
+
+                s.println(p.getName());
+                s.println(p.getId());
+                s.print(smooth);
+                s.print(" ");
+                s.print(closed);
+                s.print(" ");
+                s.print(precision);
+                s.print(" ");
+                s.print(background_room);
+                s.print(" ");
+                s.print(snapX);
+                s.print(" ");
+                s.print(snapY);
+                s.print(" ");
+                s.println(points);
+
+                for (PathPoint pp : p.points) {
+                    s.println(pp.getX() + "," + pp.getY() + "@" + pp.getSpeed());
+                }
+                s.close();
+                System.out.println("Exported path " + f);
+
+            } catch (FileNotFoundException e) {
+                System.err.println("Cannot export path " + f);
+            }
+
+        }
+    }
+
+    private void exportScripts(File parentdir) {
+        File scrDir = new File(parentdir, "scripts");
+        scrDir.mkdir();
+        ResourceList<Script> scrs = LGM.currentFile.resMap.getList(Script.class);
+        Iterator<Script> scrI = scrs.iterator();
+        while (scrI.hasNext()) {
+            Script s = scrI.next();
+            File f = new File(scrDir, s.getName() + ".gml");
+            try {
+                BufferedWriter w = new BufferedWriter(new FileWriter(f));
+                w.write(s.getName() + '\n');
+                w.write(s.getId() + '\n');
+                w.write(s.getCode());
+                w.close();
+                System.out.println("Wrote Script " + f);
+            } catch (IOException e) {
+                System.err.println("Couldn't write script " + f);
+                e.printStackTrace();
+            }
+
+        }
+    }
+
+    private void exportFonts(File parentdir) {
+        File fntDir = new File(parentdir, "fonts");
+        fntDir.mkdir();
+        ResourceList<Font> fonts = LGM.currentFile.resMap.getList(Font.class);
+        Iterator<Font> fntI = fonts.iterator();
+        while (fntI.hasNext()) {
+            Font font = fntI.next();
+            File ff = new File(fntDir, font.getName() + ".dat");
+            try {
+                // resource name,
+                // FONT_NAME,SIZE,BOLD,ITALIC,ANTIALIAS,CHARSET,RANGE_MIN,RANGE_MAX
+                String name = font.getName();
+                String font_name = font.properties.get(PFont.FONT_NAME);
+                int size = font.properties.get(PFont.SIZE);
+                boolean bold = font.properties.get(PFont.BOLD);
+                boolean italic = font.properties.get(PFont.ITALIC);
+                int antialias = font.properties.get(PFont.ANTIALIAS);
+                int charset = font.properties.get(PFont.CHARSET);
+                int range_min = font.properties.get(PFont.RANGE_MIN);
+                int range_max = font.properties.get(PFont.RANGE_MAX);
+
+                PrintWriter s = new PrintWriter(ff);
+
+                s.println(font.getName());
+                s.println(font.getId());
+                s.println(name);
+                s.println(font_name);
+                s.println(size);
+                s.println(bold);
+                s.println(italic);
+                s.println(antialias);
+                s.println(charset);
+                s.println(range_min);
+                s.println(range_max);
+
+                s.close();
+
+                System.out.println("Wrote font data " + ff);
+            } catch (FileNotFoundException exc) {
+                System.err.println("Couldn't open font file for writing: " + ff);
+            }
+        }
+
+    }
+
+    private void exportTimelines(File parentdir) {
+        File tlDir = new File(parentdir, "timelines");
+        tlDir.mkdir();
+        ResourceList<Timeline> tls = LGM.currentFile.resMap.getList(Timeline.class);
+        Iterator<Timeline> tlI = tls.iterator();
+        while (tlI.hasNext()) {
+            Timeline t = tlI.next();
+            File tlf = new File(tlDir, t.getName() + ".dat");
+
+            try {
+                PrintWriter s = new PrintWriter(tlf);
+                s.println(t.getName());
+                s.println(t.getId());
+                for (Moment m : t.moments) {
+                    s.println(m.stepNo);
+                    for (Action a : m.actions) {
+                        int i = writeAction(a);
+                        s.println("#" + i);
+                    }
+                }
+                s.close();
+                System.out.println("Wrote timeline " + tlf);
+            } catch (FileNotFoundException e) {
+                System.err.println("Can not write timeline data " + tlf);
+            }
+
+        }
+    }
+
+    private void exportGmObjects(File parentdir) {
+        File objDir = new File(parentdir, "objects");
+        objDir.mkdir();
+        ResourceList<GmObject> objs = LGM.currentFile.resMap.getList(GmObject.class);
+        Iterator<GmObject> objI = objs.iterator();
+        while (objI.hasNext()) {
+            GmObject obj = objI.next();
+            File dat = new File(objDir, obj.getName() + ".dat");
+
+            try {
+                // SPRITE,SOLID,VISIBLE,DEPTH,PERSISTENT,PARENT,MASK
+                PrintWriter s = new PrintWriter(dat);
+                s.println(obj.getName());
+                s.println(obj.getId());
+                s.println(getId((ResourceReference<?>) obj.get(PGmObject.SPRITE)));
+                s.println(obj.properties.get(PGmObject.SOLID));
+                s.println(obj.properties.get(PGmObject.VISIBLE));
+                s.println(obj.properties.get(PGmObject.DEPTH));
+                s.println(obj.properties.get(PGmObject.PERSISTENT));
+                s.println(getId((ResourceReference<?>) obj.get(PGmObject.PARENT), -100));
+                s.println(getId((ResourceReference<?>) obj.get(PGmObject.MASK)));
+
+                int numMainEvents = 11;// ver == 800 ? 12 : 11;
+                // Does not support custom trigger events
+
+                for (int j = 0; j < numMainEvents; j++) {
+                    MainEvent me = obj.mainEvents.get(j);
+                    for (Event ev : me.events) {
+                        s.print(ev.mainId + ",");
+                        if (j == MainEvent.EV_COLLISION)
+                            s.println(getId(ev.other));
+                        else
+                            s.println(ev.id);
+
+                        for (int i = 0; i < ev.actions.size(); i++) {
+                            Action a = ev.actions.get(i);
+                            int actn = writeAction(a);
+                            String str;
+                            if (i + 1 < ev.actions.size())
+                                str = ",";
+                            else
+                                str = "";
+                            s.print("#" + actn + str);
+                        }
+                        s.print('\n');
+                    }
+                }
+
+                s.close();
+                System.out.println("Wrote object " + dat);
+            } catch (FileNotFoundException e) {
+                System.err.println("Can not write object data " + dat);
+                e.printStackTrace();
+            }
+
+        }
+    }
+
+    private void exportRooms(File parentdir) {
+        File rmDir = new File(parentdir, "rooms");
+        rmDir.mkdir();
+
+        // Room Order
+        File order = new File(rmDir, "rooms.dat");
+        try {
+            PrintWriter c = new PrintWriter(order);
+            Enumeration<?> e = LGM.root.preorderEnumeration();
+            while (e.hasMoreElements()) {
+                ResNode node = (ResNode) e.nextElement();
+                if (node.kind == org.lateralgm.resources.Room.class) {
+                    org.lateralgm.resources.Room r = (org.lateralgm.resources.Room) deRef((ResourceReference<?>) node
+                            .getRes());
+                    if (r == null) {
+                        // Probably the root Room folder
+                        continue;
+                    }
+                    c.println(r.getName() + "," + r.getId());
+                }
+            }
+            c.close();
+        } catch (FileNotFoundException exc) {
+            System.err.println("Can not export room data " + order);
+        }
+
+        ResourceList<Room> rms = LGM.currentFile.resMap.getList(Room.class);
+        Iterator<Room> rmI = rms.iterator();
+        while (rmI.hasNext()) {
+            Room r = rmI.next();
+            File dat = new File(rmDir, r.getName() + ".dat");
+            try {
+                // Creation code
+                String code = r.properties.get(PRoom.CREATION_CODE);
+                if (!code.equals("")) {
+                    File cc = new File(rmDir, r.getName() + "_ccode.gml");
+                    PrintWriter pw = new PrintWriter(cc);
+                    pw.print(code);
+                    pw.close();
+                }
+
+                PrintWriter w = new PrintWriter(dat);
+                // CAPTION,WIDTH,HEIGHT,SNAP_X,SNAP_Y,ISOMETRIC,SPEED,PERSISTENT,BACKGROUND_COLOR,
+                // DRAW_BACKGROUND_COLOR,CREATION_CODE,REMEMBER_WINDOW_SIZE,EDITOR_WIDTH,EDITOR_HEIGHT,SHOW_GRID,
+                // SHOW_OBJECTS,SHOW_TILES,SHOW_BACKGROUNDS,SHOW_FOREGROUNDS,SHOW_VIEWS,DELETE_UNDERLYING_OBJECTS,
+                // DELETE_UNDERLYING_TILES,CURRENT_TAB,SCROLL_BAR_X,SCROLL_BAR_Y,ENABLE_VIEWS
+
+                w.println(r.getName());
+                w.println(r.getId());
+
+                w.println(r.properties.get(PRoom.CAPTION));
+                w.println(r.properties.get(PRoom.WIDTH));
+                w.println(r.properties.get(PRoom.HEIGHT));
+
+                // USELESS: SNAP_X, SNAP_Y, ISOMETRIC
+
+                w.println(r.properties.get(PRoom.SPEED));
+                w.println(r.properties.get(PRoom.PERSISTENT));
+                Color c = r.properties.get(PRoom.BACKGROUND_COLOR);
+                w.println(c.getRGB());
+                w.println(r.properties.get(PRoom.DRAW_BACKGROUND_COLOR));
+                // Creation code, whether or not there is any
+                w.println(!code.equals(""));
+                w.println(r.backgroundDefs.size());
+                for (BackgroundDef b : r.backgroundDefs) {
+                    // VISIBLE,FOREGROUND,BACKGROUND,X,Y,TILE_HORIZ,TILE_VERT,H_SPEED,V_SPEED,STRETCH
+                    boolean visible = b.properties.get(PBackgroundDef.VISIBLE);
+                    boolean foreground = b.properties.get(PBackgroundDef.FOREGROUND);
+                    // bg id
+                    int x = b.properties.get(PBackgroundDef.X);
+                    int y = b.properties.get(PBackgroundDef.Y);
+                    boolean tile_horiz = b.properties.get(PBackgroundDef.TILE_HORIZ);
+                    boolean tile_vert = b.properties.get(PBackgroundDef.TILE_VERT);
+                    int hspeed = b.properties.get(PBackgroundDef.H_SPEED);
+                    int vspeed = b.properties.get(PBackgroundDef.V_SPEED);
+                    boolean stretch = b.properties.get(PBackgroundDef.STRETCH);
+
+                    print(w, visible, foreground,
+                            getId((ResourceReference<?>) b.properties.get(PBackgroundDef.BACKGROUND)), x, y,
+                            tile_horiz, tile_vert, hspeed, vspeed, stretch);
+                }
+                w.println(r.properties.get(PRoom.ENABLE_VIEWS));
+                w.println(r.views.size());
+                for (View view : r.views) {
+                    // VISIBLE,VIEW_X,VIEW_Y,VIEW_W,VIEW_H,PORT_X,PORT_Y,PORT_W,PORT_H,
+                    // BORDER_H,BORDER_V, SPEED_H, SPEED_V, OBJECT
+                    boolean visible = view.properties.get(PView.VISIBLE);
+                    int view_x = view.properties.get(PView.VIEW_X);
+                    int view_y = view.properties.get(PView.VIEW_Y);
+                    int view_w = view.properties.get(PView.VIEW_W);
+                    int view_h = view.properties.get(PView.VIEW_H);
+                    int port_x = view.properties.get(PView.PORT_X);
+                    int port_y = view.properties.get(PView.PORT_Y);
+                    int port_w = view.properties.get(PView.PORT_W);
+                    int port_h = view.properties.get(PView.PORT_H);
+                    int border_h = view.properties.get(PView.BORDER_H);
+                    int border_v = view.properties.get(PView.BORDER_V);
+                    int speed_h = view.properties.get(PView.SPEED_H);
+                    int speed_v = view.properties.get(PView.SPEED_V);
+                    print(w, visible, view_x, view_y, view_w, view_h, port_x, port_y, port_w, port_h, border_h,
+                            border_v, speed_h, speed_v, getId((ResourceReference<?>) view.properties.get(PView.OBJECT)));
+                }
+                w.println(r.instances.size());
+
+                for (Instance in : r.instances) {
+                    String in_code = in.getCreationCode();
+                    String ccode_file = "null";
+                    if (!in_code.equals("")) {
+                        int index = iccode_index++;
+                        File ccf = new File(rmDir, "c_" + index + ".gml");
+                        PrintWriter ccw = new PrintWriter(ccf);
+                        ccw.print(in_code);
+                        ccw.close();
+                        ccode_file = "@" + index;
+                    }
+                    ResourceReference<GmObject> or = in.properties.get(PInstance.OBJECT);
+                    print(w, in.getPosition().x, in.getPosition().y, getId(or), in.properties.get(PInstance.ID),
+                            ccode_file);
+                }
+                w.println(r.tiles.size());
+
+                for (Tile tile : r.tiles) {
+                    ResourceReference<Background> rb = tile.properties.get(PTile.BACKGROUND);
+
+                    print(w, tile.getRoomPosition().x, tile.getRoomPosition().y, tile.getBackgroundPosition().x,
+                            tile.getBackgroundPosition().y, tile.getSize().width, tile.getSize().height,
+                            tile.getDepth(), getId(rb), tile.properties.get(PTile.ID));
+                }
+                // Rest of the stuff is useless
+
+                w.close();
+                System.out.println("Wrote room " + dat);
+            } catch (FileNotFoundException e) {
+                System.err.println("Cannot write room " + dat);
+            }
+        }
+    }
+
+    private void exportGameInfo(File parentdir) {
+        GameInformation info = LGM.currentFile.gameInfo;
+
+        File infoFile = new File(parentdir, "Game Information.rtf");
+        File settingsFile = new File(parentdir, "Game Information.dat");
+
+        String text = info.get(PGameInformation.TEXT);
+        try {
+            BufferedWriter w = new BufferedWriter(new FileWriter(infoFile));
+            w.write(text);
+            w.close();
+
+            // BACKGROUND_COLOR,MIMIC_GAME_WINDOW,FORM_CAPTION,LEFT,TOP,WIDTH,HEIGHT,SHOW_BORDER,
+            // ALLOW_RESIZE, STAY_ON_TOP,PAUSE_GAME,TEXT
+            Color bg_color = info.get(PGameInformation.BACKGROUND_COLOR);
+            String caption = info.get(PGameInformation.FORM_CAPTION);
+            int left = info.get(PGameInformation.LEFT);
+            int top = info.get(PGameInformation.TOP);
+            int width = info.get(PGameInformation.WIDTH);
+            int height = info.get(PGameInformation.HEIGHT);
+            boolean mimic = info.get(PGameInformation.MIMIC_GAME_WINDOW);
+            boolean show_border = info.get(PGameInformation.SHOW_BORDER);
+            boolean allow_resize = info.get(PGameInformation.ALLOW_RESIZE);
+            boolean stay_on_top = info.get(PGameInformation.STAY_ON_TOP);
+            boolean pause_game = info.get(PGameInformation.PAUSE_GAME);
+
+            PrintWriter s = new PrintWriter(settingsFile);
+            s.println(bg_color.getRGB());
+            s.println(caption);
+            s.println(left);
+            s.println(top);
+            s.println(width);
+            s.println(height);
+            s.println(mimic);
+            s.println(show_border);
+            s.println(allow_resize);
+            s.println(stay_on_top);
+            s.println(pause_game);
+            s.close();
+
+            System.out.println("Wrote Game Information.");
+
+        } catch (IOException e) {
+            System.err.println("Couldn't write Game information");
+            e.printStackTrace();
+        }
+    }
+
+    private void exportSettings(File parentdir) {
+        // aH WHO CARES!
+    }
+
+    private int writeAction(Action act) throws FileNotFoundException {
+        final int index = action_index++;
+        File f = new File(actionDir, "a_" + index + ".dat");
+        PrintWriter s = new PrintWriter(f);
+        LibAction la = act.getLibAction();
+        s.println(la.parent != null ? la.parent.id : la.parentId);
+        s.println(la.id);
+
+        List<Argument> args = act.getArguments();
+        s.println(args.size());
+        for (Argument arg : args) {
+            s.println(arg.kind);
+            Class<? extends Resource<?, ?>> kind = Argument.getResourceKind(arg.kind);
+
+            if (kind != null && InstantiableResource.class.isAssignableFrom(kind)) {
+                s.println("ref");
+                Resource<?, ?> r = deRef((ResourceReference<?>) arg.getRes());
+                if (r != null && r instanceof InstantiableResource<?, ?>)
+                    s.println(Integer.toString(((InstantiableResource<?, ?>) r).getId()));
+                else
+                    s.println();
+            } else {
+                s.println("notref");
+                if (la.actionKind == Action.ACT_CODE) {
+                    // There should only be 1 argument for Code type action
+                    int n = action_code_index++;
+                    s.println("@" + n);
+                    File cf = new File(actionDir, "c_" + n + ".gml");
+                    PrintWriter p = new PrintWriter(cf);
+                    p.print(arg.getVal());
+                    p.close();
+                } else
+                    s.println(arg.getVal());
+            }
+        }
+        ResourceReference<GmObject> at = act.getAppliesTo();
+        if (at != null) {
+            if (at == GmObject.OBJECT_OTHER)
+                s.println(-2);
+            else if (at == GmObject.OBJECT_SELF)
+                s.println(-1);
+            else
+                s.println(getId(at, -100));
+        } else {
+            s.println(-100);
+        }
+        s.println(act.isRelative());
+        s.println(act.isNot());
+        s.close();
+
+        return index;
+    }
+
+    /**
+     * Borrowed from {@link GmStreamEncoder#writeId}
+     * 
+     * @param id
+     * @param noneval
+     * @throws IOException
+     */
+    private <R extends Resource<R, ?>> int getId(ResourceReference<R> id, int noneval) {
+        R r = deRef(id);
+        if (r != null && r instanceof InstantiableResource<?, ?>)
+            return ((InstantiableResource<?, ?>) r).getId();
+        else
+            return noneval;
+    }
+
+    private <R extends Resource<R, ?>> int getId(ResourceReference<R> id) {
+        return getId(id, -1);
+    }
+
+    private void print(PrintWriter s, Object... args) {
+        String line = "";
+        for (Object a : args) {
+            line = line + a + ",";
+        }
+        s.println(line.substring(0, line.length() - 1));
+    }
+
+}
