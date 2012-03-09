@@ -35,6 +35,7 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.Charset;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
@@ -94,44 +95,57 @@ public class ProjectExporter {
     private int iccode_index = 0;
     private File actionDir;
     private File codeDir;
+    public File projectDir;
 
     public ProjectExporter() {
-
+        projectDir = new File("RuneroGame/");
+    }
+    
+    public void clean() {
+        deleteDir(projectDir);
+    }
+    
+    private void deleteDir(File dir) {
+        for (File f : dir.listFiles()) {
+            if (f.isDirectory())
+                deleteDir(f);
+            else
+                f.delete();
+        }
     }
 
     public void export() {
+        
+        projectDir.mkdir();
         // Export stuff
-
-        File parentdir = new File("RuneroGame/");
-        parentdir.mkdir();
-
-        actionDir = new File(parentdir, "actions");
+        
+        actionDir = new File(projectDir, "actions");
         actionDir.mkdir();
-        codeDir = new File(parentdir, "code");
+        codeDir = new File(projectDir, "code");
         codeDir.mkdir();
 
         // Write Sprites
-        exportSprites(parentdir);
+        exportSprites(projectDir);
         // Write Backgrounds
-        exportBackgrounds(parentdir);
+        exportBackgrounds(projectDir);
         // Write Sounds
-        exportSounds(parentdir);
+        exportSounds(projectDir);
         // Write Paths?
-        exportPaths(parentdir);
+        exportPaths(projectDir);
         // Write Scripts
-        exportScripts(parentdir);
+        exportScripts(projectDir);
         // Write Fonts
-        exportFonts(parentdir);
+        exportFonts(projectDir);
         // Write Timelines
-        exportTimelines(parentdir);
+        exportTimelines(projectDir);
         // Write Objects
-        exportGmObjects(parentdir);
+        exportGmObjects(projectDir);
         // Write Rooms
-        exportRooms(parentdir);
+        exportRooms(projectDir);
         // Write Game Information
-        exportGameInfo(parentdir);
+        exportGameInfo(projectDir);
         // Write Global settings
-        exportSettings(parentdir);
+        exportSettings(projectDir);
     }
 
     private void exportSprites(File parentdir) {
@@ -186,6 +200,13 @@ public class ProjectExporter {
 
                 ps.println(s.getName());
                 ps.println(s.getId());
+                if (s.subImages != null) {
+                    ps.println(s.subImages.getWidth());
+                    ps.println(s.subImages.getHeight());
+                } else {
+                    ps.println(0);
+                    ps.println(0);
+                }
                 ps.println(transparent);
                 if (shape == MaskShape.DIAMOND) {
                     ps.println("DIAMOND");
@@ -571,7 +592,7 @@ public class ProjectExporter {
         rmDir.mkdir();
 
         // Room Order
-        File order = new File(rmDir, "rooms.dat");
+        File order = new File(rmDir, "rooms.lst");
         try {
             PrintWriter c = new PrintWriter(order);
             Enumeration<?> e = LGM.root.preorderEnumeration();
@@ -712,9 +733,17 @@ public class ProjectExporter {
 
         String text = info.get(PGameInformation.TEXT);
         try {
-            BufferedWriter w = new BufferedWriter(new FileWriter(infoFile));
-            w.write(text);
-            w.close();
+            // Thanks LateralGM XD
+            BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(infoFile));
+            int val = text.length();
+            out.write(val & 255);
+            out.write((val >> 8) & 255);
+            out.write((val >> 16) & 255);
+            out.write((val >> 24) & 255);
+            
+            byte[] encoded = text.getBytes(Charset.forName("ISO-8859-1"));
+            out.write(encoded);
+            out.close();
 
             // BACKGROUND_COLOR,MIMIC_GAME_WINDOW,FORM_CAPTION,LEFT,TOP,WIDTH,HEIGHT,SHOW_BORDER,
             // ALLOW_RESIZE, STAY_ON_TOP,PAUSE_GAME,TEXT

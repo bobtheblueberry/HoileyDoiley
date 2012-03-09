@@ -24,21 +24,48 @@
 
 package com.btbb.hoiley;
 
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 
 import org.lateralgm.main.LGM;
 
-public class HoileyDoileyPlugin {
+public class HoileyDoileyPlugin implements ActionListener {
 
+    public static ProjectExporter exporter;
+    protected JMenuItem exportAll;
+    protected JMenuItem cleanAll;
+    ScheduledExecutorService scheduler;
+    
     public HoileyDoileyPlugin() {
-
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        exporter = new ProjectExporter();
+        
         JMenu runMenu = new JMenu("Run Game");
-        JMenuItem runItem = new JMenuItem("Export All");
-        runItem.addActionListener(new RunCommand());
-        runMenu.add(runItem);
+        
+        exportAll = new JMenuItem("Export All");
+        exportAll.addActionListener(this);
+        runMenu.add(exportAll);
+        
+        cleanAll = new JMenuItem("Clean All");
+        cleanAll.addActionListener(this);
+        runMenu.add(cleanAll);
         
         LGM.frame.getJMenuBar().add(runMenu, 2);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        if (e.getSource() == exportAll) {
+            scheduler.schedule(new ExportCommand(), 0, TimeUnit.SECONDS);
+        } else if (e.getSource() == cleanAll) {
+            exporter.clean();
+        }
     }
 
 }
