@@ -466,7 +466,6 @@ public class ProjectExporter {
             try {
                 // resource name,
                 // FONT_NAME,SIZE,BOLD,ITALIC,ANTIALIAS,CHARSET,RANGE_MIN,RANGE_MAX
-                String name = font.getName();
                 String font_name = font.properties.get(PFont.FONT_NAME);
                 int size = font.properties.get(PFont.SIZE);
                 boolean bold = font.properties.get(PFont.BOLD);
@@ -480,7 +479,6 @@ public class ProjectExporter {
 
                 s.println(font.getName());
                 s.println(font.getId());
-                s.println(name);
                 s.println(font_name);
                 s.println(size);
                 s.println(bold);
