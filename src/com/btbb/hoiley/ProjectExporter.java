@@ -28,11 +28,9 @@ import static org.lateralgm.main.Util.deRef;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.BufferedOutputStream;
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
@@ -45,6 +43,7 @@ import javax.imageio.ImageIO;
 import org.lateralgm.components.impl.ResNode;
 import org.lateralgm.file.GmStreamEncoder;
 import org.lateralgm.file.ResourceList;
+import org.lateralgm.file.StreamEncoder;
 import org.lateralgm.main.LGM;
 import org.lateralgm.main.Util;
 import org.lateralgm.resources.Background;
@@ -91,38 +90,33 @@ import org.lateralgm.util.PropertyMap;
 public class ProjectExporter {
 
     private int action_index = 0;
-    private int action_code_index = 0;
     private int iccode_index = 0;
     private File actionDir;
-    private File codeDir;
     public File projectDir;
 
     public ProjectExporter() {
         projectDir = new File("RuneroGame/");
     }
-    
+
     public void clean() {
         deleteDir(projectDir);
     }
-    
+
     private void deleteDir(File dir) {
         for (File f : dir.listFiles()) {
             if (f.isDirectory())
                 deleteDir(f);
-            else
-                f.delete();
+            f.delete();
         }
     }
 
     public void export() {
-        
+
         projectDir.mkdir();
         // Export stuff
-        
+
         actionDir = new File(projectDir, "actions");
         actionDir.mkdir();
-        codeDir = new File(projectDir, "code");
-        codeDir.mkdir();
 
         // Write Sprites
         exportSprites(projectDir);
@@ -441,11 +435,11 @@ public class ProjectExporter {
             Script s = scrI.next();
             File f = new File(scrDir, s.getName() + ".gml");
             try {
-                BufferedWriter w = new BufferedWriter(new FileWriter(f));
-                w.write(s.getName() + '\n');
-                w.write(s.getId() + '\n');
-                w.write(s.getCode());
-                w.close();
+                StreamEncoder out = new StreamEncoder(f);
+                writeStr(s.getName(), out);
+                out.write4(s.getId());
+                writeStr(s.getCode(), out);
+                out.close();
                 System.out.println("Wrote Script " + f);
             } catch (IOException e) {
                 System.err.println("Couldn't write script " + f);
@@ -520,7 +514,7 @@ public class ProjectExporter {
                 }
                 s.close();
                 System.out.println("Wrote timeline " + tlf);
-            } catch (FileNotFoundException e) {
+            } catch (IOException e) {
                 System.err.println("Can not write timeline data " + tlf);
             }
 
@@ -577,7 +571,7 @@ public class ProjectExporter {
 
                 s.close();
                 System.out.println("Wrote object " + dat);
-            } catch (FileNotFoundException e) {
+            } catch (IOException e) {
                 System.err.println("Can not write object data " + dat);
                 e.printStackTrace();
             }
@@ -738,7 +732,7 @@ public class ProjectExporter {
             out.write((val >> 8) & 255);
             out.write((val >> 16) & 255);
             out.write((val >> 24) & 255);
-            
+
             byte[] encoded = text.getBytes(Charset.forName("ISO-8859-1"));
             out.write(encoded);
             out.close();
@@ -783,55 +777,53 @@ public class ProjectExporter {
         // aH WHO CARES!
     }
 
-    private int writeAction(Action act) throws FileNotFoundException {
+    private int writeAction(Action act) throws IOException {
         final int index = action_index++;
         File f = new File(actionDir, "a_" + index + ".dat");
-        PrintWriter s = new PrintWriter(f);
         LibAction la = act.getLibAction();
-        s.println(la.parent != null ? la.parent.id : la.parentId);
-        s.println(la.id);
+        
+        StreamEncoder out = new StreamEncoder(f);
+        out.write4(la.parent != null ? la.parent.id : la.parentId);
+        out.write4(la.id);
 
         List<Argument> args = act.getArguments();
-        s.println(args.size());
+        out.write4(args.size());
         for (Argument arg : args) {
-            s.println(arg.kind);
+            out.write(arg.kind);
             Class<? extends Resource<?, ?>> kind = Argument.getResourceKind(arg.kind);
 
             if (kind != null && InstantiableResource.class.isAssignableFrom(kind)) {
-                s.println("ref");
+                out.write(0);
                 Resource<?, ?> r = deRef((ResourceReference<?>) arg.getRes());
                 if (r != null && r instanceof InstantiableResource<?, ?>)
-                    s.println(Integer.toString(((InstantiableResource<?, ?>) r).getId()));
+                    out.write4(((InstantiableResource<?, ?>) r).getId());
                 else
-                    s.println();
+                    out.write4(0);
             } else {
-                s.println("notref");
                 if (la.actionKind == Action.ACT_CODE) {
+                    out.write(2);
                     // There should only be 1 argument for Code type action
-                    int n = action_code_index++;
-                    s.println("@" + n);
-                    File cf = new File(actionDir, "c_" + n + ".gml");
-                    PrintWriter p = new PrintWriter(cf);
-                    p.print(arg.getVal());
-                    p.close();
-                } else
-                    s.println(arg.getVal());
+                    writeStr(arg.getVal(), out);
+                } else {
+                    out.write(1);
+                    writeStr(arg.getVal(), out);
+                }
             }
         }
         ResourceReference<GmObject> at = act.getAppliesTo();
         if (at != null) {
             if (at == GmObject.OBJECT_OTHER)
-                s.println(-2);
+                out.write4(-2);
             else if (at == GmObject.OBJECT_SELF)
-                s.println(-1);
+                out.write4(-1);
             else
-                s.println(getId(at, -100));
+                out.write4(getId(at, -100));
         } else {
-            s.println(-100);
+            out.write4(-100);
         }
-        s.println(act.isRelative());
-        s.println(act.isNot());
-        s.close();
+        writeBool(act.isRelative(), out);
+        writeBool(act.isNot(), out);
+        out.close();
 
         return index;
     }
@@ -863,4 +855,13 @@ public class ProjectExporter {
         s.println(line.substring(0, line.length() - 1));
     }
 
+    public void writeStr(String str, StreamEncoder e) throws IOException {
+        byte[] encoded = str.getBytes();
+        e.write4(encoded.length);
+        e.write(encoded);
+    }
+    
+    public void writeBool(boolean bool, StreamEncoder e) throws IOException {
+        e.write(bool ? 1 : 0);
+    }
 }
