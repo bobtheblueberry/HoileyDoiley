@@ -30,6 +30,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
@@ -62,7 +63,6 @@ import org.lateralgm.resources.Sound;
 import org.lateralgm.resources.Sound.PSound;
 import org.lateralgm.resources.Sound.SoundKind;
 import org.lateralgm.resources.Sprite;
-import org.lateralgm.resources.Sprite.BBMode;
 import org.lateralgm.resources.Sprite.MaskShape;
 import org.lateralgm.resources.Sprite.PSprite;
 import org.lateralgm.resources.Timeline;
@@ -90,9 +90,10 @@ public class ProjectExporter {
     private File actionDir;
     public File projectDir;
 
-    public ProjectExporter() {
-        projectDir = new File("RuneroGame/");
-    }
+    public ProjectExporter()
+        {
+            projectDir = new File("RuneroGame/");
+        }
 
     public void clean() {
         deleteDir(projectDir);
@@ -145,7 +146,7 @@ public class ProjectExporter {
         Iterator<Sprite> sprI = sprites.iterator();
 
         while (sprI.hasNext()) {
-            String subimgs = "";
+            ArrayList<String> subimgs = new ArrayList<String>();
             Sprite s = sprI.next();
             if (s.subImages.isEmpty()) {
                 System.out.println(s + " has no subimgs");
@@ -164,11 +165,12 @@ public class ProjectExporter {
                     } catch (IOException exc) {
                         exc.printStackTrace();
                     }
-                    subimgs = subimgs + imf.getName() + ((i + 1 < s.subImages.size()) ? "," : "");
+                    subimgs.add(imf.getName());
                 }
             }
             // TRANSPARENT,SHAPE,ALPHA_TOLERANCE,SEPARATE_MASK,SMOOTH_EDGES,PRELOAD,ORIGIN_X,ORIGIN_Y,
-            // BB_MODE,BB_LEFT,BB_RIGHT,BB_TOP,BB_BOTTOM
+            // BB_MODE*,BB_LEFT,BB_RIGHT,BB_TOP,BB_BOTTOM
+            // * ignored
             boolean transparent = s.properties.get(PSprite.TRANSPARENT);
             MaskShape shape = s.properties.get(PSprite.SHAPE);
             int alpha = s.properties.get(PSprite.ALPHA_TOLERANCE);
@@ -177,59 +179,109 @@ public class ProjectExporter {
             boolean preload = s.properties.get(PSprite.PRELOAD);
             int x = s.properties.get(PSprite.ORIGIN_X);
             int y = s.properties.get(PSprite.ORIGIN_Y);
-            BBMode mode = s.properties.get(PSprite.BB_MODE);
             int left = s.properties.get(PSprite.BB_LEFT);
             int right = s.properties.get(PSprite.BB_RIGHT);
             int top = s.properties.get(PSprite.BB_TOP);
             int bottom = s.properties.get(PSprite.BB_BOTTOM);
 
             File f = new File(sprDir, s.getName() + ".dat");
-            PrintWriter ps;
-            try {
-                ps = new PrintWriter(f);
 
-                ps.println(s.getName());
-                ps.println(s.getId());
+            try {
+                StreamEncoder out = new StreamEncoder(f);
+                writeStr(s.getName(), out);
+                out.write4(s.getId());
                 if (s.subImages != null) {
-                    ps.println(s.subImages.getWidth());
-                    ps.println(s.subImages.getHeight());
+                    out.write4(s.subImages.getWidth());
+                    out.write4(s.subImages.getHeight());
                 } else {
-                    ps.println(0);
-                    ps.println(0);
+                    out.write4(0);
+                    out.write4(0);
                 }
-                ps.println(transparent);
-                if (shape == MaskShape.DIAMOND) {
-                    ps.println("DIAMOND");
-                } else if (shape == MaskShape.DISK) {
-                    ps.println("DISK");
-                } else if (shape == MaskShape.PRECISE) {
-                    ps.println("PRECISE");
-                } else if (shape == MaskShape.RECTANGLE) {
-                    ps.println("RECTANGLE");
-                }
-                ps.println(alpha);
-                ps.println(mask);
-                ps.println(smooth);
-                ps.println(preload);
-                ps.println(x);
-                ps.println(y);
-                if (mode == BBMode.AUTO) {
-                    ps.println("AUTO");
-                } else if (mode == BBMode.FULL) {
-                    ps.println("FULL");
-                } else if (mode == BBMode.MANUAL) {
-                    ps.println("MANUAL");
-                }
-                ps.println(left);
-                ps.println(right);
-                ps.println(top);
-                ps.println(bottom);
-                ps.println(subimgs);
-                ps.close();
+                // subimages
+                out.write4(subimgs.size());
+                for (String ss : subimgs)
+                    writeStr(ss, out);
+
+                writeBool(transparent, out);
+                // PRECISE,RECTANGLE,DISK,DIAMOND,POLYGON
+                int box;
+                if (shape == MaskShape.RECTANGLE)
+                    box = 0;
+                else if (shape == MaskShape.PRECISE)
+                    box = 1;
+                else if (shape == MaskShape.DISK)
+                    box = 2;
+                else if (shape == MaskShape.DIAMOND)
+                    box = 3;
+                else if (shape == MaskShape.POLYGON)
+                    box = 4;
+                else
+                    box = -1;
+                out.write(box);
+                out.write4(alpha);
+                writeBool(mask, out);
+                writeBool(smooth, out);
+                writeBool(preload, out);
+                out.write4(x);
+                out.write4(y);
+                out.write4(left);
+                out.write4(right);
+                out.write4(top);
+                out.write4(bottom);
+                // write mask
+                writeSpriteMask(s, transparent, shape, out);
+                out.close();
                 System.out.println("Wrote " + f);
 
-            } catch (FileNotFoundException e) {
+            } catch (IOException e) {
                 System.err.println("Error, can't write sprite " + f);
+            }
+        }
+    }
+
+    private void writeSpriteMask(Sprite s, boolean transparent, MaskShape shape, StreamEncoder out) throws IOException {
+        if (shape != MaskShape.PRECISE) {
+            if (shape != MaskShape.RECTANGLE)
+                System.out.println("Cannot create mask shape of type " + shape);
+            out.write4(0);
+            return;
+        }
+        if (s.subImages == null) {
+            out.write4(0);
+            return;
+        }
+        // precise
+        
+        // determine length of data for each subimage
+        int len = s.subImages.getWidth() * s.subImages.getHeight();
+        int wlen = (int) (Math.ceil(len / 8) * 8);
+        out.write4(wlen);
+
+        int threshold = 0x7F; // TODO: Add threshold thing to LGM - use alpha var
+        for (BufferedImage img : s.subImages) {
+            int pixels[] = img.getRGB(0, 0, img.getWidth(), img.getHeight(), null, 0, img.getWidth());
+            int trans = img.getRGB(0, img.getHeight() - 1) & 0x00FFFFFF;
+
+            for (int p = 0; p < pixels.length; p += 8) {
+                char b = 0;
+                for (int j = 0; j < 8; j++) {
+                    if (p + j >= pixels.length) {
+                        b <<= (7 - j);
+                        break;
+                    }
+                    int pixel = pixels[p + j];
+                    int t = pixel >>> 24;
+                    if (t < threshold) {
+                        if (transparent && (pixel & 0x00FFFFFF) != trans)
+                            b++;
+                        else if (!transparent)
+                            b++;// solid pixel
+                    }
+
+                    if (j < 7)
+                        b <<= 1;
+                }
+                out.write(b);
             }
         }
     }
@@ -777,7 +829,7 @@ public class ProjectExporter {
         final int index = action_index++;
         File f = new File(actionDir, "a_" + index + ".dat");
         LibAction la = act.getLibAction();
-        
+
         StreamEncoder out = new StreamEncoder(f);
         out.write4(la.parent != null ? la.parent.id : la.parentId);
         out.write4(la.id);
@@ -851,13 +903,13 @@ public class ProjectExporter {
         s.println(line.substring(0, line.length() - 1));
     }
 
-    public void writeStr(String str, StreamEncoder e) throws IOException {
+    public void writeStr(String str, StreamEncoder out) throws IOException {
         byte[] encoded = str.getBytes();
-        e.write4(encoded.length);
-        e.write(encoded);
+        out.write4(encoded.length);
+        out.write(encoded);
     }
-    
-    public void writeBool(boolean bool, StreamEncoder e) throws IOException {
-        e.write(bool ? 1 : 0);
+
+    public void writeBool(boolean bool, StreamEncoder out) throws IOException {
+        out.write(bool ? 1 : 0);
     }
 }
