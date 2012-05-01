@@ -24,25 +24,25 @@ import static org.lateralgm.main.Util.deRef;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
-
-import javax.imageio.ImageIO;
+import java.util.zip.DeflaterOutputStream;
 
 import org.lateralgm.components.impl.ResNode;
 import org.lateralgm.file.GmStreamEncoder;
 import org.lateralgm.file.ResourceList;
 import org.lateralgm.file.StreamEncoder;
 import org.lateralgm.main.LGM;
-import org.lateralgm.main.Util;
 import org.lateralgm.resources.Background;
 import org.lateralgm.resources.Background.PBackground;
 import org.lateralgm.resources.Font;
@@ -121,7 +121,7 @@ public class ProjectExporter {
         exportBackgrounds(projectDir);
         // Write Sounds
         exportSounds(projectDir);
-        // Write Paths?
+        // Write Paths
         exportPaths(projectDir);
         // Write Scripts
         exportScripts(projectDir);
@@ -153,18 +153,13 @@ public class ProjectExporter {
             } else {
                 int count = 0;
                 for (int i = 0; i < s.subImages.size(); i++) {
-                    File imf = new File(sprDir, s.getName() + "_sub" + count++ + ".png");
-                    try {
-                        // Don't write original image, write a transparent
-                        // version (if it is transparent)
-                        BufferedImage image = s.subImages.get(i);
-                        if ((Boolean) s.get(PSprite.TRANSPARENT))
-                            image = Util.getTransparentIcon(image);
-                        ImageIO.write(image, "PNG", imf);
-                        System.out.println("Wrote PNG " + imf);
-                    } catch (IOException exc) {
-                        exc.printStackTrace();
-                    }
+                    File imf = new File(sprDir, s.getName() + "_sub" + count++ + ".img");
+
+                    BufferedImage image = s.subImages.get(i);
+                    boolean trans = s.get(PSprite.TRANSPARENT);
+                    writeImage(image, imf, trans);
+                    System.out.println("Wrote SubImage " + imf);
+
                     subimgs.add(imf.getName());
                 }
             }
@@ -229,7 +224,7 @@ public class ProjectExporter {
                 out.write4(top);
                 out.write4(bottom);
                 // write mask
-                writeSpriteMask(s, transparent, shape, out);
+                writeSpriteMask(s, shape, out);
                 out.close();
                 System.out.println("Wrote " + f);
 
@@ -239,7 +234,7 @@ public class ProjectExporter {
         }
     }
 
-    private void writeSpriteMask(Sprite s, boolean transparent, MaskShape shape, StreamEncoder out) throws IOException {
+    private void writeSpriteMask(Sprite s, MaskShape shape, StreamEncoder out) throws IOException {
         if (shape != MaskShape.PRECISE) {
             if (shape != MaskShape.RECTANGLE)
                 System.out.println("Cannot create mask shape of type " + shape);
@@ -251,14 +246,15 @@ public class ProjectExporter {
             return;
         }
         // precise
-        
+
         // determine length of data for each subimage
         int len = s.subImages.getWidth() * s.subImages.getHeight();
-        int wlen = (int) (Math.ceil(len / 8) * 8);
+        int wlen = (int) Math.ceil(len / 8.0);
         out.write4(wlen);
 
         int threshold = 0x7F; // TODO: Add threshold thing to LGM - use alpha var
         for (BufferedImage img : s.subImages) {
+            boolean hasAlpha = img.getColorModel().hasAlpha();
             int pixels[] = img.getRGB(0, 0, img.getWidth(), img.getHeight(), null, 0, img.getWidth());
             int trans = img.getRGB(0, img.getHeight() - 1) & 0x00FFFFFF;
 
@@ -270,12 +266,12 @@ public class ProjectExporter {
                         break;
                     }
                     int pixel = pixels[p + j];
-                    int t = pixel >>> 24;
-                    if (t < threshold) {
-                        if (transparent && (pixel & 0x00FFFFFF) != trans)
-                            b++;
-                        else if (!transparent)
-                            b++;// solid pixel
+                    if (hasAlpha) {
+                        if ((pixel >>> 24) > threshold)
+                            b++;// solid
+                    } else {
+                        if ((pixels[p] & 0x00FFFFFF) != trans)
+                            b++;// solid
                     }
 
                     if (j < 7)
@@ -370,16 +366,10 @@ public class ProjectExporter {
             if (b.getBackgroundImage() == null) {
                 continue;
             }
-            File bf = new File(bgDir, b.getName() + ".png");
-            try {
-                ImageIO.write(b.getBackgroundImage(), "PNG", bf);
-                System.out.println("Wrote background " + bf);
-            } catch (FileNotFoundException exc) {
-                System.err.println("Can't open file " + bf);
-            } catch (IOException exc) {
-                System.err.println("Error writing sound " + bf.getName());
-                exc.printStackTrace();
-            }
+            File bf = new File(bgDir, b.getName() + ".img");
+
+            writeImage(b.getBackgroundImage(), bf, false);
+            System.out.println("Wrote background " + bf);
 
             // TRANSPARENT,SMOOTH_EDGES,PRELOAD,USE_AS_TILESET,TILE_WIDTH,
             // TILE_HEIGHT,H_OFFSET,V_OFFSET,H_SEP, V_SEP
@@ -876,6 +866,56 @@ public class ProjectExporter {
         return index;
     }
 
+    private void writeImage(BufferedImage i, File f, boolean useTransp) {
+
+        int width = i.getWidth();
+        int height = i.getHeight();
+
+        int trans = i.getRGB(0, height - 1) & 0x00FFFFFF;
+        // gotta do 2 factor
+        int texWidth = 2;
+        int texHeight = 2;
+
+        // find the closest power of 2 for the width and height
+        // of the produced texture
+        while (texWidth < width) {
+            texWidth *= 2;
+        }
+        while (texHeight < height) {
+            texHeight *= 2;
+        }
+        
+        int pixels[] = i.getRGB(0, 0, width, height, null, 0, width);
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(pixels.length * 4);
+            DeflaterOutputStream dos = new DeflaterOutputStream(baos);
+
+            // RGBA
+            write4(width, dos);
+            write4(height, dos);
+            write4(texWidth, dos);
+            write4(texHeight, dos);
+            for (int p = 0; p < pixels.length; p++) {
+                dos.write(pixels[p] >>> 16 & 0xFF);
+                dos.write(pixels[p] >>> 8 & 0xFF);
+                dos.write(pixels[p] & 0xFF);
+                if (useTransp && ((pixels[p] & 0x00FFFFFF) == trans))
+                    dos.write(0);
+                else
+                    dos.write(pixels[p] >>> 24);
+            }
+
+            dos.finish();
+
+            FileOutputStream out = new FileOutputStream(f);
+            out.write(baos.toByteArray());
+            out.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
     /**
      * Borrowed from {@link GmStreamEncoder#writeId}
      * 
@@ -903,13 +943,20 @@ public class ProjectExporter {
         s.println(line.substring(0, line.length() - 1));
     }
 
-    public void writeStr(String str, StreamEncoder out) throws IOException {
+    private void writeStr(String str, StreamEncoder out) throws IOException {
         byte[] encoded = str.getBytes();
         out.write4(encoded.length);
         out.write(encoded);
     }
 
-    public void writeBool(boolean bool, StreamEncoder out) throws IOException {
+    private void writeBool(boolean bool, StreamEncoder out) throws IOException {
         out.write(bool ? 1 : 0);
+    }
+
+    private void write4(int val, OutputStream s) throws IOException {
+        s.write(val & 255);
+        s.write((val >>> 8) & 255);
+        s.write((val >>> 16) & 255);
+        s.write((val >>> 24) & 255);
     }
 }
