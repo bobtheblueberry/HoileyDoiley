@@ -85,7 +85,6 @@ import org.lateralgm.util.PropertyMap;
 
 public class ProjectExporter {
 
-    private int action_index = 0;
     private File actionDir;
     public File projectDir;
 
@@ -539,17 +538,16 @@ public class ProjectExporter {
             File tlf = new File(tlDir, t.getName() + ".dat");
 
             try {
-                PrintWriter s = new PrintWriter(tlf);
-                s.println(t.getName());
-                s.println(t.getId());
+                StreamEncoder out = new StreamEncoder(tlf);
+                writeStr(t.getName(), out);
+                out.write4(t.getId());
+                out.write4(t.moments.size());
                 for (Moment m : t.moments) {
-                    s.println(m.stepNo);
-                    for (Action a : m.actions) {
-                        int i = writeAction(a);
-                        s.println("#" + i);
-                    }
+                    out.write4(m.stepNo);
+                    for (Action a : m.actions) 
+                        writeAction(a, out);
                 }
-                s.close();
+                out.close();
                 System.out.println("Wrote timeline " + tlf);
             } catch (IOException e) {
                 System.err.println("Can not write timeline data " + tlf);
@@ -569,44 +567,43 @@ public class ProjectExporter {
 
             try {
                 // SPRITE,SOLID,VISIBLE,DEPTH,PERSISTENT,PARENT,MASK
-                PrintWriter s = new PrintWriter(dat);
-                s.println(obj.getName());
-                s.println(obj.getId());
-                s.println(getId((ResourceReference<?>) obj.get(PGmObject.SPRITE)));
-                s.println(obj.properties.get(PGmObject.SOLID));
-                s.println(obj.properties.get(PGmObject.VISIBLE));
-                s.println(obj.properties.get(PGmObject.DEPTH));
-                s.println(obj.properties.get(PGmObject.PERSISTENT));
-                s.println(getId((ResourceReference<?>) obj.get(PGmObject.PARENT), -100));
-                s.println(getId((ResourceReference<?>) obj.get(PGmObject.MASK)));
+                int sprite = getId((ResourceReference<?>) obj.get(PGmObject.SPRITE));
+                boolean solid = obj.properties.get(PGmObject.SOLID);
+                boolean visible = obj.properties.get(PGmObject.VISIBLE);
+                int depth = obj.properties.get(PGmObject.DEPTH);
+                boolean persistent = obj.properties.get(PGmObject.PERSISTENT);
+                StreamEncoder out = new StreamEncoder(dat);
+                writeStr(obj.getName(), out);
+                out.write4(obj.getId());
+                out.write4(sprite);
+                writeBool(solid, out);
+                writeBool(visible, out);
+                writeBool(persistent, out);
+                out.write4(depth);
+                out.write4(getId((ResourceReference<?>) obj.get(PGmObject.PARENT), -100));
+                out.write4(getId((ResourceReference<?>) obj.get(PGmObject.MASK)));
 
                 int numMainEvents = 11;// ver == 800 ? 12 : 11;
                 // Does not support custom trigger events
-
+                out.write4(numMainEvents);
                 for (int j = 0; j < numMainEvents; j++) {
                     MainEvent me = obj.mainEvents.get(j);
+                    out.write4(me.events.size());
                     for (Event ev : me.events) {
-                        s.print(ev.mainId + ",");
+                        out.write(ev.mainId);
                         if (j == MainEvent.EV_COLLISION)
-                            s.println(getId(ev.other));
+                            out.write4(getId(ev.other));
                         else
-                            s.println(ev.id);
-
+                            out.write4(ev.id);
+                        out.write4(ev.actions.size());
                         for (int i = 0; i < ev.actions.size(); i++) {
                             Action a = ev.actions.get(i);
-                            int actn = writeAction(a);
-                            String str;
-                            if (i + 1 < ev.actions.size())
-                                str = ",";
-                            else
-                                str = "";
-                            s.print("#" + actn + str);
+                            writeAction(a, out);
                         }
-                        s.print('\n');
                     }
                 }
 
-                s.close();
+                out.close();
                 System.out.println("Wrote object " + dat);
             } catch (IOException e) {
                 System.err.println("Can not write object data " + dat);
@@ -836,12 +833,9 @@ public class ProjectExporter {
         // aH WHO CARES!
     }
 
-    private int writeAction(Action act) throws IOException {
-        final int index = action_index++;
-        File f = new File(actionDir, "a_" + index + ".dat");
+    private void writeAction(Action act, StreamEncoder out) throws IOException {
         LibAction la = act.getLibAction();
 
-        StreamEncoder out = new StreamEncoder(f);
         out.write4(la.parent != null ? la.parent.id : la.parentId);
         out.write4(la.id);
 
@@ -882,9 +876,7 @@ public class ProjectExporter {
         }
         writeBool(act.isRelative(), out);
         writeBool(act.isNot(), out);
-        out.close();
 
-        return index;
     }
 
     private void writeImage(BufferedImage i, File f, boolean useTransp) {
