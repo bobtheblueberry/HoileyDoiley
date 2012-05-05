@@ -86,7 +86,6 @@ import org.lateralgm.util.PropertyMap;
 public class ProjectExporter {
 
     private int action_index = 0;
-    private int iccode_index = 0;
     private File actionDir;
     public File projectDir;
 
@@ -624,8 +623,10 @@ public class ProjectExporter {
         // Room Order
         File order = new File(rmDir, "rooms.lst");
         try {
-            PrintWriter c = new PrintWriter(order);
+            StreamEncoder out = new StreamEncoder(order);
             Enumeration<?> e = LGM.root.preorderEnumeration();
+            ArrayList<String> names = new ArrayList<String>();
+            ArrayList<Integer> ids = new ArrayList<Integer>();
             while (e.hasMoreElements()) {
                 ResNode node = (ResNode) e.nextElement();
                 if (node.kind == org.lateralgm.resources.Room.class) {
@@ -635,11 +636,17 @@ public class ProjectExporter {
                         // Probably the root Room folder
                         continue;
                     }
-                    c.println(r.getName() + "," + r.getId());
+                    names.add(r.getName());
+                    ids.add(r.getId());
                 }
             }
-            c.close();
-        } catch (FileNotFoundException exc) {
+            out.write4(names.size());
+            for (int i = 0; i < names.size(); i++) {
+                out.write4(ids.get(i));
+                writeStr(names.get(i), out);
+            }
+            out.close();
+        } catch (IOException exc) {
             System.err.println("Can not export room data " + order);
         }
 
@@ -649,38 +656,33 @@ public class ProjectExporter {
             Room r = rmI.next();
             File dat = new File(rmDir, r.getName() + ".dat");
             try {
-                // Creation code
-                String code = r.properties.get(PRoom.CREATION_CODE);
-                if (!code.equals("")) {
-                    File cc = new File(rmDir, r.getName() + "_ccode.gml");
-                    PrintWriter pw = new PrintWriter(cc);
-                    pw.print(code);
-                    pw.close();
-                }
-
-                PrintWriter w = new PrintWriter(dat);
+                StreamEncoder out = new StreamEncoder(dat);
                 // CAPTION,WIDTH,HEIGHT,SNAP_X,SNAP_Y,ISOMETRIC,SPEED,PERSISTENT,BACKGROUND_COLOR,
                 // DRAW_BACKGROUND_COLOR,CREATION_CODE,REMEMBER_WINDOW_SIZE,EDITOR_WIDTH,EDITOR_HEIGHT,SHOW_GRID,
                 // SHOW_OBJECTS,SHOW_TILES,SHOW_BACKGROUNDS,SHOW_FOREGROUNDS,SHOW_VIEWS,DELETE_UNDERLYING_OBJECTS,
                 // DELETE_UNDERLYING_TILES,CURRENT_TAB,SCROLL_BAR_X,SCROLL_BAR_Y,ENABLE_VIEWS
 
-                w.println(r.getName());
-                w.println(r.getId());
-
-                w.println(r.properties.get(PRoom.CAPTION));
-                w.println(r.properties.get(PRoom.WIDTH));
-                w.println(r.properties.get(PRoom.HEIGHT));
-
-                // USELESS: SNAP_X, SNAP_Y, ISOMETRIC
-
-                w.println(r.properties.get(PRoom.SPEED));
-                w.println(r.properties.get(PRoom.PERSISTENT));
+                writeStr(r.getName(), out);
+                out.write4(r.getId());
+                String caption = r.properties.get(PRoom.CAPTION);
+                int width = r.properties.get(PRoom.WIDTH);
+                int height = r.properties.get(PRoom.HEIGHT);
+                int speed = r.properties.get(PRoom.SPEED);
+                boolean persistent = r.properties.get(PRoom.PERSISTENT);
                 Color c = r.properties.get(PRoom.BACKGROUND_COLOR);
-                w.println(c.getRGB());
-                w.println(r.properties.get(PRoom.DRAW_BACKGROUND_COLOR));
-                // Creation code, whether or not there is any
-                w.println(!code.equals(""));
-                w.println(r.backgroundDefs.size());
+                boolean draw_background_color = r.properties.get(PRoom.DRAW_BACKGROUND_COLOR);
+                String code = r.properties.get(PRoom.CREATION_CODE);
+
+                writeStr(caption, out);
+                out.write4(width);
+                out.write4(height);
+                // USELESS: SNAP_X, SNAP_Y, ISOMETRIC
+                out.write4(speed);
+                writeBool(persistent, out);
+                out.write4(c.getRGB());
+                writeBool(draw_background_color, out);
+                writeStr(code, out);
+                out.write4(r.backgroundDefs.size());
                 for (BackgroundDef b : r.backgroundDefs) {
                     // VISIBLE,FOREGROUND,BACKGROUND,X,Y,TILE_HORIZ,TILE_VERT,H_SPEED,V_SPEED,STRETCH
                     boolean visible = b.properties.get(PBackgroundDef.VISIBLE);
@@ -693,13 +695,20 @@ public class ProjectExporter {
                     int hspeed = b.properties.get(PBackgroundDef.H_SPEED);
                     int vspeed = b.properties.get(PBackgroundDef.V_SPEED);
                     boolean stretch = b.properties.get(PBackgroundDef.STRETCH);
-
-                    print(w, visible, foreground,
-                            getId((ResourceReference<?>) b.properties.get(PBackgroundDef.BACKGROUND)), x, y,
-                            tile_horiz, tile_vert, hspeed, vspeed, stretch);
+                    writeBool(visible, out);
+                    writeBool(foreground, out);
+                    out.write4(getId((ResourceReference<?>) b.properties.get(PBackgroundDef.BACKGROUND)));
+                    out.write4(x);
+                    out.write4(y);
+                    writeBool(tile_horiz, out);
+                    writeBool(tile_vert, out);
+                    out.write4(hspeed);
+                    out.write4(vspeed);
+                    writeBool(stretch, out);
                 }
-                w.println(r.properties.get(PRoom.ENABLE_VIEWS));
-                w.println(r.views.size());
+                boolean enableViews = r.properties.get(PRoom.ENABLE_VIEWS);
+                writeBool(enableViews, out);
+                out.write4(r.views.size());
                 for (View view : r.views) {
                     // VISIBLE,VIEW_X,VIEW_Y,VIEW_W,VIEW_H,PORT_X,PORT_Y,PORT_W,PORT_H,
                     // BORDER_H,BORDER_V, SPEED_H, SPEED_V, OBJECT
@@ -716,40 +725,52 @@ public class ProjectExporter {
                     int border_v = view.properties.get(PView.BORDER_V);
                     int speed_h = view.properties.get(PView.SPEED_H);
                     int speed_v = view.properties.get(PView.SPEED_V);
-                    print(w, visible, view_x, view_y, view_w, view_h, port_x, port_y, port_w, port_h, border_h,
-                            border_v, speed_h, speed_v, getId((ResourceReference<?>) view.properties.get(PView.OBJECT)));
+                    writeBool(visible, out);
+                    out.write4(view_x);
+                    out.write4(view_y);
+                    out.write4(view_w);
+                    out.write4(view_h);
+                    out.write4(port_x);
+                    out.write4(port_y);
+                    out.write4(port_w);
+                    out.write4(port_h);
+                    out.write4(border_h);
+                    out.write4(border_v);
+                    out.write4(speed_h);
+                    out.write4(speed_v);
+                    out.write4(getId((ResourceReference<?>) view.properties.get(PView.OBJECT)));
                 }
-                w.println(r.instances.size());
+                out.write4(r.instances.size());
 
                 for (Instance in : r.instances) {
-                    String in_code = in.getCreationCode();
-                    String ccode_file = "null";
-                    if (!in_code.equals("")) {
-                        int index = iccode_index++;
-                        File ccf = new File(rmDir, "c_" + index + ".gml");
-                        PrintWriter ccw = new PrintWriter(ccf);
-                        ccw.print(in_code);
-                        ccw.close();
-                        ccode_file = "@" + index;
-                    }
                     ResourceReference<GmObject> or = in.properties.get(PInstance.OBJECT);
-                    print(w, in.getPosition().x, in.getPosition().y, getId(or), in.properties.get(PInstance.ID),
-                            ccode_file);
+                    int id = in.properties.get(PInstance.ID);
+                    out.write4(in.getPosition().x);
+                    out.write4(in.getPosition().y);
+                    out.write4(getId(or));
+                    out.write4(id);
+                    writeStr(in.getCreationCode(), out);
                 }
-                w.println(r.tiles.size());
+                out.write4(r.tiles.size());
 
                 for (Tile tile : r.tiles) {
                     ResourceReference<Background> rb = tile.properties.get(PTile.BACKGROUND);
-
-                    print(w, tile.getRoomPosition().x, tile.getRoomPosition().y, tile.getBackgroundPosition().x,
-                            tile.getBackgroundPosition().y, tile.getSize().width, tile.getSize().height,
-                            tile.getDepth(), getId(rb), tile.properties.get(PTile.ID));
+                    int id = tile.properties.get(PTile.ID);
+                    out.write4(tile.getRoomPosition().x);
+                    out.write4(tile.getRoomPosition().y);
+                    out.write4(tile.getBackgroundPosition().x);
+                    out.write4(tile.getBackgroundPosition().y);
+                    out.write4(tile.getSize().width);
+                    out.write4(tile.getSize().height);
+                    out.write4(tile.getDepth());
+                    out.write4(getId(rb));
+                    out.write4(id);
                 }
                 // Rest of the stuff is useless
 
-                w.close();
+                out.close();
                 System.out.println("Wrote room " + dat);
-            } catch (FileNotFoundException e) {
+            } catch (IOException e) {
                 System.err.println("Cannot write room " + dat);
             }
         }
@@ -933,14 +954,6 @@ public class ProjectExporter {
 
     private <R extends Resource<R, ?>> int getId(ResourceReference<R> id) {
         return getId(id, -1);
-    }
-
-    private void print(PrintWriter s, Object... args) {
-        String line = "";
-        for (Object a : args) {
-            line = line + a + ",";
-        }
-        s.println(line.substring(0, line.length() - 1));
     }
 
     private void writeStr(String str, StreamEncoder out) throws IOException {
