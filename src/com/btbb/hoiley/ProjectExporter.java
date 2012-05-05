@@ -884,7 +884,7 @@ public class ProjectExporter {
         while (texHeight < height) {
             texHeight *= 2;
         }
-        
+
         int pixels[] = i.getRGB(0, 0, width, height, null, 0, width);
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream(pixels.length * 4);
