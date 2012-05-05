@@ -384,23 +384,23 @@ public class ProjectExporter {
 
             File f = new File(bgDir, b.getName() + ".dat");
             try {
-                PrintWriter s = new PrintWriter(f);
-                s.println(b.getName());
-                s.println(b.getId());
-                s.println(transparent);
-                s.println(smooth);
-                s.println(preload);
-                s.println(tileset);
-                s.println(tile_width);
-                s.println(tile_height);
-                s.println(h_offset);
-                s.println(v_offset);
-                s.println(h_sep);
-                s.println(v_sep);
-                s.println(bf.getName());
+                StreamEncoder out = new StreamEncoder(f);
+                writeStr(b.getName(), out);
+                out.write4(b.getId());
+                writeBool(transparent, out);
+                writeBool(smooth, out);
+                writeBool(preload, out);
+                writeBool(tileset, out);
+                out.write4(tile_width);
+                out.write4(tile_height);
+                out.write4(h_offset);
+                out.write4(v_offset);
+                out.write4(h_sep);
+                out.write4(v_sep);
+                writeStr(bf.getName(), out);
 
-                s.close();
-            } catch (FileNotFoundException exc) {
+                out.close();
+            } catch (IOException exc) {
                 System.err.println("Error writing background data for file " + f);
             }
         }
