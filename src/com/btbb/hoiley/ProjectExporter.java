@@ -30,8 +30,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintWriter;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Iterator;
@@ -321,33 +319,31 @@ public class ProjectExporter {
 
             File data = new File(sndDir, s.getName() + ".dat");
             try {
-                PrintWriter ps = new PrintWriter(data);
-
-                ps.println(s.getName());
-                ps.println(s.getId());
-                if (kind == SoundKind.NORMAL) {
-                    ps.println("NORMAL");
-                } else if (kind == SoundKind.MULTIMEDIA) {
-                    ps.println("MULTIMEDIA");
-                } else if (kind == SoundKind.BACKGROUND) {
-                    ps.println("BACKGROUND");
-                } else if (kind == SoundKind.SPATIAL) {
-                    ps.println("SPATIAL");
-                }
-                ps.println(file_type);
-                ps.println(file_name);
-                ps.println(chorus);
-                ps.println(echo);
-                ps.println(flanger);
-                ps.println(gargle);
-                ps.println(reverb);
-                ps.println(volume);
-                ps.println(pan);
-                ps.println(preload);
-                ps.println(sf.getName());
-
-                ps.close();
-            } catch (FileNotFoundException e) {
+                StreamEncoder out = new StreamEncoder(data);
+                writeStr(s.getName(), out);
+                out.write4(s.getId());
+                if (kind == SoundKind.NORMAL)
+                    out.write(0);
+                else if (kind == SoundKind.MULTIMEDIA)
+                    out.write(1);
+                else if (kind == SoundKind.BACKGROUND)
+                    out.write(2);
+                else if (kind == SoundKind.SPATIAL)
+                    out.write(3);
+                writeStr(file_type, out);
+                writeStr(file_name, out);
+                writeBool(chorus, out);
+                writeBool(echo, out);
+                writeBool(flanger, out);
+                writeBool(gargle, out);
+                writeBool(reverb, out);
+                out.writeD(volume);
+                out.writeD(pan);
+                writeBool(preload, out);
+                out.write4(s.data.length);
+                out.write(s.data);
+                out.close();
+            } catch (IOException e) {
                 System.err.println("Error writing sound data " + data);
             }
 
@@ -406,7 +402,6 @@ public class ProjectExporter {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void exportPaths(File parentdir) {
         File pathDir = new File(parentdir, "paths");
         pathDir.mkdir();
@@ -419,43 +414,27 @@ public class ProjectExporter {
             boolean smooth = p.properties.get(PPath.SMOOTH);
             boolean closed = p.properties.get(PPath.CLOSED);
             int precision = p.properties.get(PPath.PRECISION);
-            String background_room = "";
-            ResourceReference<?> ref = p.properties.get(PPath.BACKGROUND_ROOM);
-            if (ref.get() instanceof Room) {
-                background_room = ((ResourceReference<Room>) ref).get().getName();
-            }
 
-            int snapX = p.properties.get(PPath.SNAP_X);
-            int snapY = p.properties.get(PPath.SNAP_Y);
             int points = p.points.size();
 
-            PrintWriter s;
             try {
-                s = new PrintWriter(f);
-
-                s.println(p.getName());
-                s.println(p.getId());
-                s.print(smooth);
-                s.print(" ");
-                s.print(closed);
-                s.print(" ");
-                s.print(precision);
-                s.print(" ");
-                s.print(background_room);
-                s.print(" ");
-                s.print(snapX);
-                s.print(" ");
-                s.print(snapY);
-                s.print(" ");
-                s.println(points);
+                StreamEncoder out = new StreamEncoder(f);
+                writeStr(p.getName(), out);
+                out.write4(p.getId());
+                writeBool(smooth, out);
+                writeBool(closed, out);
+                out.write4(precision);
+                out.write4(points);
 
                 for (PathPoint pp : p.points) {
-                    s.println(pp.getX() + "," + pp.getY() + "@" + pp.getSpeed());
+                    out.write4(pp.getX());
+                    out.write4(pp.getY());
+                    out.write4(pp.getSpeed());
                 }
-                s.close();
+                out.close();
                 System.out.println("Exported path " + f);
 
-            } catch (FileNotFoundException e) {
+            } catch (IOException e) {
                 System.err.println("Cannot export path " + f);
             }
 
@@ -505,23 +484,23 @@ public class ProjectExporter {
                 int range_min = font.properties.get(PFont.RANGE_MIN);
                 int range_max = font.properties.get(PFont.RANGE_MAX);
 
-                PrintWriter s = new PrintWriter(ff);
+                StreamEncoder out = new StreamEncoder(ff);
+                writeStr(font.getName(), out);
+                out.write4(font.getId());
+                writeStr(font_name, out);
 
-                s.println(font.getName());
-                s.println(font.getId());
-                s.println(font_name);
-                s.println(size);
-                s.println(bold);
-                s.println(italic);
-                s.println(antialias);
-                s.println(charset);
-                s.println(range_min);
-                s.println(range_max);
+                out.write4(size);
+                writeBool(bold, out);
+                writeBool(italic, out);
+                out.write4(antialias);
+                out.write4(charset);
+                out.write4(range_min);
+                out.write4(range_max);
 
-                s.close();
+                out.close();
 
                 System.out.println("Wrote font data " + ff);
-            } catch (FileNotFoundException exc) {
+            } catch (IOException exc) {
                 System.err.println("Couldn't open font file for writing: " + ff);
             }
         }
@@ -544,7 +523,7 @@ public class ProjectExporter {
                 out.write4(t.moments.size());
                 for (Moment m : t.moments) {
                     out.write4(m.stepNo);
-                    for (Action a : m.actions) 
+                    for (Action a : m.actions)
                         writeAction(a, out);
                 }
                 out.close();
@@ -776,22 +755,10 @@ public class ProjectExporter {
     private void exportGameInfo(File parentdir) {
         GameInformation info = LGM.currentFile.gameInfo;
 
-        File infoFile = new File(parentdir, "Game Information.rtf");
-        File settingsFile = new File(parentdir, "Game Information.dat");
+        File file = new File(parentdir, "Game Information.dat");
 
         String text = info.get(PGameInformation.TEXT);
         try {
-            // Thanks LateralGM XD
-            BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(infoFile));
-            int val = text.length();
-            out.write(val & 255);
-            out.write((val >> 8) & 255);
-            out.write((val >> 16) & 255);
-            out.write((val >> 24) & 255);
-
-            byte[] encoded = text.getBytes(Charset.forName("ISO-8859-1"));
-            out.write(encoded);
-            out.close();
 
             // BACKGROUND_COLOR,MIMIC_GAME_WINDOW,FORM_CAPTION,LEFT,TOP,WIDTH,HEIGHT,SHOW_BORDER,
             // ALLOW_RESIZE, STAY_ON_TOP,PAUSE_GAME,TEXT
@@ -807,19 +774,20 @@ public class ProjectExporter {
             boolean stay_on_top = info.get(PGameInformation.STAY_ON_TOP);
             boolean pause_game = info.get(PGameInformation.PAUSE_GAME);
 
-            PrintWriter s = new PrintWriter(settingsFile);
-            s.println(bg_color.getRGB());
-            s.println(caption);
-            s.println(left);
-            s.println(top);
-            s.println(width);
-            s.println(height);
-            s.println(mimic);
-            s.println(show_border);
-            s.println(allow_resize);
-            s.println(stay_on_top);
-            s.println(pause_game);
-            s.close();
+            StreamEncoder out = new StreamEncoder(file);
+            writeStr(text, out);
+            out.write4(bg_color.getRGB());
+            writeStr(caption, out);
+            out.write4(left);
+            out.write4(top);
+            out.write4(width);
+            out.write4(height);
+            writeBool(mimic, out);
+            writeBool(show_border, out);
+            writeBool(allow_resize, out);
+            writeBool(stay_on_top, out);
+            writeBool(pause_game, out);
+            out.close();
 
             System.out.println("Wrote Game Information.");
 
