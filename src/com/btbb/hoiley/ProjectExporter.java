@@ -26,7 +26,6 @@ import java.awt.image.BufferedImage;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -37,9 +36,11 @@ import java.util.List;
 import java.util.zip.DeflaterOutputStream;
 
 import org.lateralgm.components.impl.ResNode;
+import org.lateralgm.file.GmFile;
 import org.lateralgm.file.GmStreamEncoder;
 import org.lateralgm.file.ResourceList;
 import org.lateralgm.file.StreamEncoder;
+import org.lateralgm.file.iconio.ICOFile;
 import org.lateralgm.main.LGM;
 import org.lateralgm.resources.Background;
 import org.lateralgm.resources.Background.PBackground;
@@ -47,6 +48,8 @@ import org.lateralgm.resources.Font;
 import org.lateralgm.resources.Font.PFont;
 import org.lateralgm.resources.GameInformation;
 import org.lateralgm.resources.GameInformation.PGameInformation;
+import org.lateralgm.resources.GameSettings;
+import org.lateralgm.resources.GameSettings.PGameSettings;
 import org.lateralgm.resources.GmObject;
 import org.lateralgm.resources.GmObject.PGmObject;
 import org.lateralgm.resources.InstantiableResource;
@@ -79,12 +82,23 @@ import org.lateralgm.resources.sub.Tile;
 import org.lateralgm.resources.sub.Tile.PTile;
 import org.lateralgm.resources.sub.View;
 import org.lateralgm.resources.sub.View.PView;
-import org.lateralgm.util.PropertyMap;
 
 public class ProjectExporter {
 
     private File actionDir;
     public File projectDir;
+    private StreamEncoder resData;
+    private static final byte SPRITE = 1;
+    private static final byte BACKGROUND = 2;
+    private static final byte SOUND = 3;
+    private static final byte PATH = 4;
+    private static final byte SCRIPT = 5;
+    private static final byte FONT = 6;
+    private static final byte TIMELINE = 7;
+    private static final byte OBJECT = 8;
+    private static final byte ROOM = 9;
+    private static final byte GAME_INFO = 10;
+    private static final byte SETTINGS = 11;
 
     public ProjectExporter()
         {
@@ -104,13 +118,13 @@ public class ProjectExporter {
     }
 
     public void export() {
-
         projectDir.mkdir();
         // Export stuff
 
         actionDir = new File(projectDir, "actions");
         actionDir.mkdir();
 
+        initResFile();
         // Write Sprites
         exportSprites(projectDir);
         // Write Backgrounds
@@ -133,6 +147,38 @@ public class ProjectExporter {
         exportGameInfo(projectDir);
         // Write Global settings
         exportSettings(projectDir);
+        closeRes();
+    }
+
+    private void initResFile() {
+        File res = new File(projectDir, "resources.dat");
+        try {
+            resData = new StreamEncoder(res);
+            resData.write4(LGM.currentFile.resMap.getList(Sprite.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(Background.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(Sound.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(Path.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(Script.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(Font.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(Timeline.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(GmObject.class).size());
+            resData.write4(LGM.currentFile.resMap.getList(Room.class).size());
+        } catch (IOException exc) {
+            System.err.println("Cannot open resources file");
+        }
+    }
+
+    private void addRes(String name, byte type) throws IOException {
+        resData.write(type);
+        writeStr(name, resData);
+    }
+
+    private void closeRes() {
+        try {
+            resData.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private void exportSprites(File parentdir) {
@@ -148,13 +194,12 @@ public class ProjectExporter {
                 System.out.println(s + " has no subimgs");
             } else {
                 int count = 0;
+                boolean trans = s.get(PSprite.TRANSPARENT);
                 for (int i = 0; i < s.subImages.size(); i++) {
                     File imf = new File(sprDir, s.getName() + "_sub" + count++ + ".img");
 
                     BufferedImage image = s.subImages.get(i);
-                    boolean trans = s.get(PSprite.TRANSPARENT);
                     writeImage(image, imf, trans);
-                    System.out.println("Wrote SubImage " + imf);
 
                     subimgs.add(imf.getName());
                 }
@@ -175,9 +220,10 @@ public class ProjectExporter {
             int top = s.properties.get(PSprite.BB_TOP);
             int bottom = s.properties.get(PSprite.BB_BOTTOM);
 
-            File f = new File(sprDir, s.getName() + ".dat");
+            File f = new File(sprDir, s.getName() + ".spr");
 
             try {
+                addRes(f.getName(), SPRITE);
                 StreamEncoder out = new StreamEncoder(f);
                 writeStr(s.getName(), out);
                 out.write4(s.getId());
@@ -286,24 +332,16 @@ public class ProjectExporter {
         Iterator<Sound> sndI = sounds.iterator();
         while (sndI.hasNext()) {
             Sound s = sndI.next();
-            if (s.data == null || s.data.length < 1) {
-                continue;
-            }
-            PropertyMap<PSound> map = s.properties;
-            String name = s.getName() + map.get(PSound.FILE_TYPE);
+            String name = s.getName() + s.properties.get(PSound.FILE_TYPE);
             File sf = new File(sndDir, name);
             try {
                 BufferedOutputStream w = new BufferedOutputStream(new FileOutputStream(sf));
                 w.write(s.data);
                 w.close();
-                System.out.println("Wrote sound " + sf);
-            } catch (FileNotFoundException exc) {
-                System.err.println("Can't open file " + sf);
             } catch (IOException exc) {
                 System.err.println("Error writing sound " + sf.getName());
                 exc.printStackTrace();
             }
-
             // KIND,FILE_TYPE,FILE_NAME,CHORUS,ECHO,FLANGER,GARGLE,REVERB,VOLUME,PAN,PRELOAD
             SoundKind kind = s.properties.get(PSound.KIND);
             String file_type = s.properties.get(PSound.FILE_TYPE);
@@ -317,8 +355,9 @@ public class ProjectExporter {
             double pan = s.properties.get(PSound.PAN);
             boolean preload = s.properties.get(PSound.PRELOAD);
 
-            File data = new File(sndDir, s.getName() + ".dat");
+            File data = new File(sndDir, s.getName() + ".snd");
             try {
+                addRes(data.getName(), SOUND);
                 StreamEncoder out = new StreamEncoder(data);
                 writeStr(s.getName(), out);
                 out.write4(s.getId());
@@ -340,8 +379,7 @@ public class ProjectExporter {
                 out.writeD(volume);
                 out.writeD(pan);
                 writeBool(preload, out);
-                out.write4(s.data.length);
-                out.write(s.data);
+                writeStr(sf.getName(), out);
                 out.close();
             } catch (IOException e) {
                 System.err.println("Error writing sound data " + data);
@@ -357,14 +395,8 @@ public class ProjectExporter {
         Iterator<Background> bgI = backgrounds.iterator();
         while (bgI.hasNext()) {
             Background b = bgI.next();
-            if (b.getBackgroundImage() == null) {
-                continue;
-            }
             File bf = new File(bgDir, b.getName() + ".img");
-
             writeImage(b.getBackgroundImage(), bf, false);
-            System.out.println("Wrote background " + bf);
-
             // TRANSPARENT,SMOOTH_EDGES,PRELOAD,USE_AS_TILESET,TILE_WIDTH,
             // TILE_HEIGHT,H_OFFSET,V_OFFSET,H_SEP, V_SEP
             boolean transparent = b.properties.get(PBackground.TRANSPARENT);
@@ -378,8 +410,9 @@ public class ProjectExporter {
             int h_sep = b.properties.get(PBackground.H_SEP);
             int v_sep = b.properties.get(PBackground.V_SEP);
 
-            File f = new File(bgDir, b.getName() + ".dat");
+            File f = new File(bgDir, b.getName() + ".bg");
             try {
+                addRes(f.getName(), BACKGROUND);
                 StreamEncoder out = new StreamEncoder(f);
                 writeStr(b.getName(), out);
                 out.write4(b.getId());
@@ -396,6 +429,7 @@ public class ProjectExporter {
                 writeStr(bf.getName(), out);
 
                 out.close();
+                System.out.println("Wrote background " + f);
             } catch (IOException exc) {
                 System.err.println("Error writing background data for file " + f);
             }
@@ -409,7 +443,7 @@ public class ProjectExporter {
         Iterator<Path> pathI = paths.iterator();
         while (pathI.hasNext()) {
             Path p = pathI.next();
-            File f = new File(pathDir, p.getName() + ".dat");
+            File f = new File(pathDir, p.getName() + ".path");
             // SMOOTH,CLOSED,PRECISION,BACKGROUND_ROOM,SNAP_X,SNAP_Y
             boolean smooth = p.properties.get(PPath.SMOOTH);
             boolean closed = p.properties.get(PPath.CLOSED);
@@ -418,6 +452,7 @@ public class ProjectExporter {
             int points = p.points.size();
 
             try {
+                addRes(f.getName(), PATH);
                 StreamEncoder out = new StreamEncoder(f);
                 writeStr(p.getName(), out);
                 out.write4(p.getId());
@@ -448,8 +483,9 @@ public class ProjectExporter {
         Iterator<Script> scrI = scrs.iterator();
         while (scrI.hasNext()) {
             Script s = scrI.next();
-            File f = new File(scrDir, s.getName() + ".gml");
+            File f = new File(scrDir, s.getName() + ".scr");
             try {
+                addRes(f.getName(), SCRIPT);
                 StreamEncoder out = new StreamEncoder(f);
                 writeStr(s.getName(), out);
                 out.write4(s.getId());
@@ -471,8 +507,9 @@ public class ProjectExporter {
         Iterator<Font> fntI = fonts.iterator();
         while (fntI.hasNext()) {
             Font font = fntI.next();
-            File ff = new File(fntDir, font.getName() + ".dat");
+            File ff = new File(fntDir, font.getName() + ".fnt");
             try {
+                addRes(ff.getName(), FONT);
                 // resource name,
                 // FONT_NAME,SIZE,BOLD,ITALIC,ANTIALIAS,CHARSET,RANGE_MIN,RANGE_MAX
                 String font_name = font.properties.get(PFont.FONT_NAME);
@@ -514,9 +551,9 @@ public class ProjectExporter {
         Iterator<Timeline> tlI = tls.iterator();
         while (tlI.hasNext()) {
             Timeline t = tlI.next();
-            File tlf = new File(tlDir, t.getName() + ".dat");
-
+            File tlf = new File(tlDir, t.getName() + ".tl");
             try {
+                addRes(tlf.getName(), TIMELINE);
                 StreamEncoder out = new StreamEncoder(tlf);
                 writeStr(t.getName(), out);
                 out.write4(t.getId());
@@ -542,9 +579,10 @@ public class ProjectExporter {
         Iterator<GmObject> objI = objs.iterator();
         while (objI.hasNext()) {
             GmObject obj = objI.next();
-            File dat = new File(objDir, obj.getName() + ".dat");
+            File dat = new File(objDir, obj.getName() + ".obj");
 
             try {
+                addRes(dat.getName(), OBJECT);
                 // SPRITE,SOLID,VISIBLE,DEPTH,PERSISTENT,PARENT,MASK
                 int sprite = getId((ResourceReference<?>) obj.get(PGmObject.SPRITE));
                 boolean solid = obj.properties.get(PGmObject.SOLID);
@@ -596,42 +634,26 @@ public class ProjectExporter {
         File rmDir = new File(parentdir, "rooms");
         rmDir.mkdir();
 
-        // Room Order
-        File order = new File(rmDir, "rooms.lst");
-        try {
-            StreamEncoder out = new StreamEncoder(order);
-            Enumeration<?> e = LGM.root.preorderEnumeration();
-            ArrayList<String> names = new ArrayList<String>();
-            ArrayList<Integer> ids = new ArrayList<Integer>();
-            while (e.hasMoreElements()) {
-                ResNode node = (ResNode) e.nextElement();
-                if (node.kind == org.lateralgm.resources.Room.class) {
-                    org.lateralgm.resources.Room r = (org.lateralgm.resources.Room) deRef((ResourceReference<?>) node
-                            .getRes());
-                    if (r == null) {
-                        // Probably the root Room folder
-                        continue;
-                    }
-                    names.add(r.getName());
-                    ids.add(r.getId());
-                }
-            }
-            out.write4(names.size());
-            for (int i = 0; i < names.size(); i++) {
-                out.write4(ids.get(i));
-                writeStr(names.get(i), out);
-            }
-            out.close();
-        } catch (IOException exc) {
-            System.err.println("Can not export room data " + order);
-        }
+        ArrayList<String> names = new ArrayList<String>();
 
-        ResourceList<Room> rms = LGM.currentFile.resMap.getList(Room.class);
-        Iterator<Room> rmI = rms.iterator();
-        while (rmI.hasNext()) {
-            Room r = rmI.next();
-            File dat = new File(rmDir, r.getName() + ".dat");
+        Enumeration<?> e = LGM.root.preorderEnumeration();
+        while (e.hasMoreElements()) {
+            ResNode node = (ResNode) e.nextElement();
+            if (node.kind == org.lateralgm.resources.Room.class) {
+                org.lateralgm.resources.Room r = (org.lateralgm.resources.Room) deRef((ResourceReference<?>) node
+                        .getRes());
+                if (r == null) {
+                    // Probably the root Room folder
+                    continue;
+                }
+                names.add(r.getName());
+            }
+        }
+        for (String s : names) {
+            Room r = LGM.currentFile.resMap.getList(Room.class).get(s);
+            File dat = new File(rmDir, r.getName() + ".room");
             try {
+                addRes(dat.getName(), ROOM);
                 StreamEncoder out = new StreamEncoder(dat);
                 // CAPTION,WIDTH,HEIGHT,SNAP_X,SNAP_Y,ISOMETRIC,SPEED,PERSISTENT,BACKGROUND_COLOR,
                 // DRAW_BACKGROUND_COLOR,CREATION_CODE,REMEMBER_WINDOW_SIZE,EDITOR_WIDTH,EDITOR_HEIGHT,SHOW_GRID,
@@ -746,7 +768,7 @@ public class ProjectExporter {
 
                 out.close();
                 System.out.println("Wrote room " + dat);
-            } catch (IOException e) {
+            } catch (IOException ex) {
                 System.err.println("Cannot write room " + dat);
             }
         }
@@ -754,12 +776,10 @@ public class ProjectExporter {
 
     private void exportGameInfo(File parentdir) {
         GameInformation info = LGM.currentFile.gameInfo;
-
-        File file = new File(parentdir, "Game Information.dat");
-
+        File file = new File(parentdir, "Game Information.info");
         String text = info.get(PGameInformation.TEXT);
         try {
-
+            addRes(file.getName(), GAME_INFO);
             // BACKGROUND_COLOR,MIMIC_GAME_WINDOW,FORM_CAPTION,LEFT,TOP,WIDTH,HEIGHT,SHOW_BORDER,
             // ALLOW_RESIZE, STAY_ON_TOP,PAUSE_GAME,TEXT
             Color bg_color = info.get(PGameInformation.BACKGROUND_COLOR);
@@ -798,7 +818,136 @@ public class ProjectExporter {
     }
 
     private void exportSettings(File parentdir) {
-        // aH WHO CARES!
+        GameSettings s = LGM.currentFile.gameSettings;
+        /*
+        GAME_ID,DPLAY_GUID,START_FULLSCREEN,INTERPOLATE,DONT_DRAW_BORDER,DISPLAY_CURSOR,SCALING,
+        ALLOW_WINDOW_RESIZE,ALWAYS_ON_TOP,COLOR_OUTSIDE_ROOM,
+        SET_RESOLUTION,COLOR_DEPTH,RESOLUTION,FREQUENCY,
+        DONT_SHOW_BUTTONS,USE_SYNCHRONIZATION,DISABLE_SCREENSAVERS,LET_F4_SWITCH_FULLSCREEN,
+        LET_F1_SHOW_GAME_INFO,LET_ESC_END_GAME,LET_F5_SAVE_F6_LOAD,LET_F9_SCREENSHOT,
+        TREAT_CLOSE_AS_ESCAPE,GAME_PRIORITY,
+        FREEZE_ON_LOSE_FOCUS,LOAD_BAR_MODE,FRONT_LOAD_BAR,BACK_LOAD_BAR,SHOW_CUSTOM_LOAD_IMAGE,
+        LOADING_IMAGE,IMAGE_PARTIALLY_TRANSPARENTY,LOAD_IMAGE_ALPHA,SCALE_PROGRESS_BAR,
+        DISPLAY_ERRORS,WRITE_TO_LOG,ABORT_ON_ERROR,TREAT_UNINIT_AS_0,ERROR_ON_ARGS,AUTHOR,VERSION,
+        LAST_CHANGED,INFORMATION,
+        INCLUDE_FOLDER,OVERWRITE_EXISTING,REMOVE_AT_GAME_END,VERSION_MAJOR,VERSION_MINOR,
+        VERSION_RELEASE,VERSION_BUILD,COMPANY,PRODUCT,COPYRIGHT,DESCRIPTION,GAME_ICON
+        */
+        int gameId = s.get(PGameSettings.GAME_ID);
+        boolean startFullscreen = s.get(PGameSettings.START_FULLSCREEN);
+        boolean interpolate = s.get(PGameSettings.INTERPOLATE);
+        boolean dontDrawBorder = s.get(PGameSettings.DONT_DRAW_BORDER);
+        boolean displayCursor = s.get(PGameSettings.DISPLAY_CURSOR);
+        int scaling = s.get(PGameSettings.SCALING);
+        boolean allowWindowResize = s.get(PGameSettings.ALLOW_WINDOW_RESIZE);
+        boolean alwaysOnTop = s.get(PGameSettings.ALWAYS_ON_TOP);
+        Color colorOutsideRoom = s.get(PGameSettings.COLOR_OUTSIDE_ROOM);
+        boolean setResolution = s.get(PGameSettings.SET_RESOLUTION);
+        byte colorDepth = GmFile.GS_DEPTH_CODE.get(s.get(PGameSettings.COLOR_DEPTH)).byteValue();
+        byte resolution = GmFile.GS_RESOL_CODE.get(s.get(PGameSettings.RESOLUTION)).byteValue();
+        byte frequency = GmFile.GS_FREQ_CODE.get(s.get(PGameSettings.FREQUENCY)).byteValue();
+        boolean dontShowButtons = s.get(PGameSettings.DONT_SHOW_BUTTONS);
+        boolean useSynchronization = s.get(PGameSettings.USE_SYNCHRONIZATION);
+        boolean disableScreensavers = s.get(PGameSettings.DISABLE_SCREENSAVERS);
+        boolean letF4SwitchFullscreen = s.get(PGameSettings.LET_F4_SWITCH_FULLSCREEN);
+        boolean letF1ShowGameInfo = s.get(PGameSettings.LET_F1_SHOW_GAME_INFO);
+        boolean letEscEndGame = s.get(PGameSettings.LET_ESC_END_GAME);
+        boolean letF5SaveF6Load = s.get(PGameSettings.LET_F5_SAVE_F6_LOAD);
+        boolean letF9Screenshot = s.get(PGameSettings.LET_F9_SCREENSHOT);
+        boolean treatCloseAsEscape = s.get(PGameSettings.TREAT_CLOSE_AS_ESCAPE);
+        byte gamePriority = GmFile.GS_PRIORITY_CODE.get(s.get(PGameSettings.GAME_PRIORITY)).byteValue();
+        boolean freezeOnLoseFocus = s.get(PGameSettings.FREEZE_ON_LOSE_FOCUS);
+        byte loadBarMode = GmFile.GS_PROGBAR_CODE.get(s.get(PGameSettings.LOAD_BAR_MODE)).byteValue();
+        // Image frontLoadBar
+        // Image backLoadBar
+        boolean showCustomLoadImage = s.get(PGameSettings.SHOW_CUSTOM_LOAD_IMAGE);
+        // Image loadingImage
+        boolean imagePartiallyTransparent = s.get(PGameSettings.IMAGE_PARTIALLY_TRANSPARENTY);
+        int loadImageAlpha = s.get(PGameSettings.LOAD_IMAGE_ALPHA);
+        boolean scaleProgressBar = s.get(PGameSettings.SCALE_PROGRESS_BAR);
+        boolean displayErrors = s.get(PGameSettings.DISPLAY_ERRORS);
+        boolean writeToLog = s.get(PGameSettings.WRITE_TO_LOG);
+        boolean abortOnError = s.get(PGameSettings.ABORT_ON_ERROR);
+        boolean treatUninitializedAs0 = s.get(PGameSettings.TREAT_UNINIT_AS_0);
+        String author = s.get(PGameSettings.AUTHOR);
+        String version = s.get(PGameSettings.VERSION);
+        double lastChanged = s.get(PGameSettings.LAST_CHANGED);
+        String information = s.get(PGameSettings.INFORMATION);
+
+        int includeFolder = GmFile.GS_INCFOLDER_CODE.get(s.get(PGameSettings.INCLUDE_FOLDER));
+
+        boolean overwriteExisting = s.get(PGameSettings.OVERWRITE_EXISTING);
+        boolean removeAtGameEnd = s.get(PGameSettings.REMOVE_AT_GAME_END);
+
+        int versionMajor = s.get(PGameSettings.VERSION_MAJOR);
+        int versionMinor = s.get(PGameSettings.VERSION_MINOR);
+        int versionRelease = s.get(PGameSettings.VERSION_RELEASE);
+        int versionBuild = s.get(PGameSettings.VERSION_BUILD);
+        String company = s.get(PGameSettings.COMPANY);
+        String product = s.get(PGameSettings.PRODUCT);
+        String copyright = s.get(PGameSettings.COPYRIGHT);
+        String description = s.get(PGameSettings.DESCRIPTION);
+        ICOFile ico = s.get(PGameSettings.GAME_ICON);
+
+        File f = new File(parentdir, "settings.dat");
+        try {
+            addRes(f.getName(), SETTINGS);
+            StreamEncoder out = new StreamEncoder(f);
+            out.write4(gameId);
+            writeBool(startFullscreen, out);
+            writeBool(interpolate, out);
+            writeBool(dontDrawBorder, out);
+            writeBool(displayCursor, out);
+            out.write4(scaling);
+            writeBool(allowWindowResize, out);
+            writeBool(alwaysOnTop, out);
+            out.write4(colorOutsideRoom.getRGB());
+            writeBool(setResolution, out);
+            out.write(colorDepth);
+            out.write(resolution);
+            out.write(frequency);
+            writeBool(dontShowButtons, out);
+            writeBool(useSynchronization, out);
+            writeBool(disableScreensavers, out);
+            writeBool(letF4SwitchFullscreen, out);
+            writeBool(letF1ShowGameInfo, out);
+            writeBool(letEscEndGame, out);
+            writeBool(letF5SaveF6Load, out);
+            writeBool(letF9Screenshot, out);
+            writeBool(treatCloseAsEscape, out);
+            out.write(gamePriority);
+            writeBool(freezeOnLoseFocus, out);
+            out.write(loadBarMode);
+            writeBool(showCustomLoadImage, out);
+            writeBool(imagePartiallyTransparent, out);
+            out.write4(loadImageAlpha);
+            writeBool(scaleProgressBar, out);
+            writeBool(displayErrors, out);
+            writeBool(writeToLog, out);
+            writeBool(abortOnError, out);
+            writeBool(treatUninitializedAs0, out);
+            writeStr(author, out);
+            writeStr(version, out);
+            out.writeD(lastChanged);
+            writeStr(information, out);
+            out.write4(includeFolder);
+            writeBool(overwriteExisting, out);
+            writeBool(removeAtGameEnd, out);
+            out.write4(versionMajor);
+            out.write4(versionMinor);
+            out.write4(versionRelease);
+            out.write4(versionBuild);
+            writeStr(company, out);
+            writeStr(product, out);
+            writeStr(copyright, out);
+            writeStr(description, out);
+            ico.write(out);
+
+            out.close();
+        } catch (IOException e) {
+            System.err.println("Error writing settings");
+            e.printStackTrace();
+        }
     }
 
     private void writeAction(Action act, StreamEncoder out) throws IOException {
@@ -888,13 +1037,12 @@ public class ProjectExporter {
 
             dos.finish();
 
-            FileOutputStream out = new FileOutputStream(f);
+            StreamEncoder out = new StreamEncoder(f);
             out.write(baos.toByteArray());
             out.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
-
     }
 
     /**
