@@ -99,6 +99,7 @@ public class ProjectExporter {
     private static final byte GAME_INFO = 10;
     private static final byte SETTINGS = 11;
 
+    private DebugWindow w;
     public ProjectExporter()
         {
             projectDir = new File("RuneroGame/");
@@ -106,6 +107,8 @@ public class ProjectExporter {
 
     public void clean() {
         deleteDir(projectDir);
+        DebugWindow.getWindow().reset();
+        DebugWindow.getWindow().log("Project Cleaned");
     }
 
     private void deleteDir(File dir) {
@@ -117,6 +120,9 @@ public class ProjectExporter {
     }
 
     public void export() {
+        w = DebugWindow.getWindow();
+        w.reset();
+        w.log("Starting export...");
         projectDir.mkdir();
         // Export stuff
 
@@ -147,6 +153,7 @@ public class ProjectExporter {
         // Write Global settings
         exportSettings(projectDir);
         closeRes();
+        w.log("Done.");
     }
 
     private void initResFile() {
@@ -190,7 +197,7 @@ public class ProjectExporter {
             ArrayList<String> subimgs = new ArrayList<String>();
             Sprite s = sprI.next();
             if (s.subImages.isEmpty()) {
-                System.out.println(s + " has no subimgs");
+                w.log(s + " has no subimgs");
             } else {
                 int count = 0;
                 boolean trans = s.get(PSprite.TRANSPARENT);
@@ -267,7 +274,7 @@ public class ProjectExporter {
                 // write mask
                 writeSpriteMask(s, shape, out);
                 out.close();
-                System.out.println("Wrote " + f);
+                w.log("Wrote " + f);
 
             } catch (IOException e) {
                 System.err.println("Error, can't write sprite " + f);
@@ -278,7 +285,7 @@ public class ProjectExporter {
     private void writeSpriteMask(Sprite s, MaskShape shape, StreamEncoder out) throws IOException {
         if (shape != MaskShape.PRECISE) {
             if (shape != MaskShape.RECTANGLE)
-                System.out.println("Cannot create mask shape of type " + shape);
+                w.log("Cannot create mask shape of type " + shape);
             out.write4(0);
             return;
         }
@@ -428,7 +435,7 @@ public class ProjectExporter {
                 writeStr(bf.getName(), out);
 
                 out.close();
-                System.out.println("Wrote background " + f);
+                w.log("Wrote background " + f);
             } catch (IOException exc) {
                 System.err.println("Error writing background data for file " + f);
             }
@@ -466,7 +473,7 @@ public class ProjectExporter {
                     out.write4(pp.getSpeed());
                 }
                 out.close();
-                System.out.println("Exported path " + f);
+                w.log("Exported path " + f);
 
             } catch (IOException e) {
                 System.err.println("Cannot export path " + f);
@@ -490,7 +497,7 @@ public class ProjectExporter {
                 out.write4(s.getId());
                 writeStr(s.getCode(), out);
                 out.close();
-                System.out.println("Wrote Script " + f);
+                w.log("Wrote Script " + f);
             } catch (IOException e) {
                 System.err.println("Couldn't write script " + f);
                 e.printStackTrace();
@@ -535,7 +542,7 @@ public class ProjectExporter {
 
                 out.close();
 
-                System.out.println("Wrote font data " + ff);
+                w.log("Wrote font data " + ff);
             } catch (IOException exc) {
                 System.err.println("Couldn't open font file for writing: " + ff);
             }
@@ -563,7 +570,7 @@ public class ProjectExporter {
                         writeAction(a, out);
                 }
                 out.close();
-                System.out.println("Wrote timeline " + tlf);
+                w.log("Wrote timeline " + tlf);
             } catch (IOException e) {
                 System.err.println("Can not write timeline data " + tlf);
             }
@@ -620,7 +627,7 @@ public class ProjectExporter {
                 }
 
                 out.close();
-                System.out.println("Wrote object " + dat);
+                w.log("Wrote object " + dat);
             } catch (IOException e) {
                 System.err.println("Can not write object data " + dat);
                 e.printStackTrace();
@@ -766,7 +773,7 @@ public class ProjectExporter {
                 // Rest of the stuff is useless
 
                 out.close();
-                System.out.println("Wrote room " + dat);
+                w.log("Wrote room " + dat);
             } catch (IOException ex) {
                 System.err.println("Cannot write room " + dat);
             }
@@ -808,7 +815,7 @@ public class ProjectExporter {
             writeBool(pause_game, out);
             out.close();
 
-            System.out.println("Wrote Game Information.");
+            w.log("Wrote Game Information.");
 
         } catch (IOException e) {
             System.err.println("Couldn't write Game information");
@@ -886,7 +893,7 @@ public class ProjectExporter {
         String product = s.get(PGameSettings.PRODUCT);
         String copyright = s.get(PGameSettings.COPYRIGHT);
         String description = s.get(PGameSettings.DESCRIPTION);
-        //ICOFile ico = s.get(PGameSettings.GAME_ICON);
+        // ICOFile ico = s.get(PGameSettings.GAME_ICON);
 
         File f = new File(parentdir, "settings.dat");
         try {

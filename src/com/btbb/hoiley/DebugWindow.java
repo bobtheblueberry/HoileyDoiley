@@ -17,6 +17,7 @@ public class DebugWindow {
         {
             f = new JInternalFrame("Runero");
             f.setMaximizable(true);
+            f.setClosable(true);
             f.setResizable(true);
             f.setSize(640, 480);
             pane = new JTextPane();

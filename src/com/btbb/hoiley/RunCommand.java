@@ -1,12 +1,13 @@
 package com.btbb.hoiley;
 
+
 import org.gcreator.runero.Runner;
 
 public class RunCommand implements Runnable {
 
     public void runGame() {
         DebugWindow w = DebugWindow.getWindow();
-        w.log("Starting Game");
+        w.log("Starting Game. Please start LateralGM in terminal to see potential errors.");
         try {
             new Runner(HoileyDoileyPlugin.exporter.projectDir);
         } catch (NoClassDefFoundError e) {

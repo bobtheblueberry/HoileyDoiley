@@ -89,8 +89,7 @@ public class HoileyDoileyPlugin implements ActionListener {
         } else if (e.getSource() == cleanAll) {
             exporter.clean();
         } else if (e.getSource() == runGame) {
-            new RunCommand().run();
-            //scheduler.schedule(new RunCommand(), 0, TimeUnit.SECONDS);
+            scheduler.schedule(new RunCommand(), 0, TimeUnit.SECONDS);
         }
     }
 }
