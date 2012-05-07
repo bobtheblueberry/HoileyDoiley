@@ -40,7 +40,6 @@ import org.lateralgm.file.GmFile;
 import org.lateralgm.file.GmStreamEncoder;
 import org.lateralgm.file.ResourceList;
 import org.lateralgm.file.StreamEncoder;
-import org.lateralgm.file.iconio.ICOFile;
 import org.lateralgm.main.LGM;
 import org.lateralgm.resources.Background;
 import org.lateralgm.resources.Background.PBackground;
@@ -312,7 +311,7 @@ public class ProjectExporter {
                         if ((pixel >>> 24) > threshold)
                             b++;// solid
                     } else {
-                        if ((pixels[p] & 0x00FFFFFF) != trans)
+                        if ((pixel & 0x00FFFFFF) != trans)
                             b++;// solid
                     }
 
@@ -887,7 +886,7 @@ public class ProjectExporter {
         String product = s.get(PGameSettings.PRODUCT);
         String copyright = s.get(PGameSettings.COPYRIGHT);
         String description = s.get(PGameSettings.DESCRIPTION);
-        ICOFile ico = s.get(PGameSettings.GAME_ICON);
+        //ICOFile ico = s.get(PGameSettings.GAME_ICON);
 
         File f = new File(parentdir, "settings.dat");
         try {
@@ -941,7 +940,6 @@ public class ProjectExporter {
             writeStr(product, out);
             writeStr(copyright, out);
             writeStr(description, out);
-            ico.write(out);
 
             out.close();
         } catch (IOException e) {
