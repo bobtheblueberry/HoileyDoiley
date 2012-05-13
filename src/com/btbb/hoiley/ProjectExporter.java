@@ -422,6 +422,8 @@ public class ProjectExporter {
                 StreamEncoder out = new StreamEncoder(f);
                 writeStr(b.getName(), out);
                 out.write4(b.getId());
+                out.write4(b.getWidth());
+                out.write4(b.getHeight());
                 writeBool(transparent, out);
                 writeBool(smooth, out);
                 writeBool(preload, out);
