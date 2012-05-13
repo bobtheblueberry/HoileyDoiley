@@ -1,5 +1,7 @@
 package com.btbb.hoiley;
 
+import java.awt.Component;
+
 import javax.swing.JInternalFrame;
 import javax.swing.JScrollPane;
 import javax.swing.JTextPane;
@@ -45,8 +47,20 @@ public class DebugWindow {
     public static DebugWindow getWindow() {
         if (window == null)
             window = new DebugWindow();
+        if (!mdiHasWindow()) // window is removed when new game is loaded
+            LGM.mdi.add(window.f);
         window.f.setVisible(true);
         window.f.toFront();
         return window;
+    }
+    
+    private static boolean mdiHasWindow() {
+        if (window == null)
+            return false;
+        for (Component c : LGM.mdi.getComponents()) {
+            if (c == window.f)
+                return true;
+        }
+        return false;
     }
 }
