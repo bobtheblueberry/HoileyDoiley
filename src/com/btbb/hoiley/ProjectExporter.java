@@ -23,17 +23,20 @@ import static org.lateralgm.main.Util.deRef;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
-import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.zip.DeflaterOutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.lateralgm.components.impl.ResNode;
 import org.lateralgm.file.GmFile;
@@ -84,9 +87,7 @@ import org.lateralgm.resources.sub.View.PView;
 
 public class ProjectExporter {
 
-    private File actionDir;
-    public File projectDir;
-    private StreamEncoder resData;
+    public static File projectDir = new File("RuneroGame/");
     private static final byte SPRITE = 1;
     private static final byte BACKGROUND = 2;
     private static final byte SOUND = 3;
@@ -99,19 +100,24 @@ public class ProjectExporter {
     private static final byte GAME_INFO = 10;
     private static final byte SETTINGS = 11;
 
+    public boolean JAR;
+    public ZipOutputStream zo;
+
     private DebugWindow w;
-    public ProjectExporter()
+
+    public ProjectExporter(boolean jar, ZipOutputStream out)
         {
-            projectDir = new File("RuneroGame/");
+            this.JAR = jar;
+            zo = out;
         }
 
-    public void clean() {
+    public static void clean() {
         deleteDir(projectDir);
         DebugWindow.getWindow().reset();
         DebugWindow.getWindow().log("Project Cleaned");
     }
 
-    private void deleteDir(File dir) {
+    private static void deleteDir(File dir) {
         for (File f : dir.listFiles()) {
             if (f.isDirectory())
                 deleteDir(f);
@@ -123,73 +129,109 @@ public class ProjectExporter {
         w = DebugWindow.getWindow();
         w.reset();
         w.log("Starting export...");
-        projectDir.mkdir();
+        if (!JAR)
+            projectDir.mkdir();
+        map = new HashMap<String, Byte>();
         // Export stuff
 
-        actionDir = new File(projectDir, "actions");
-        actionDir.mkdir();
-
-        initResFile();
-        // Write Sprites
-        exportSprites(projectDir);
-        // Write Backgrounds
-        exportBackgrounds(projectDir);
-        // Write Sounds
-        exportSounds(projectDir);
-        // Write Paths
-        exportPaths(projectDir);
-        // Write Scripts
-        exportScripts(projectDir);
-        // Write Fonts
-        exportFonts(projectDir);
-        // Write Timelines
-        exportTimelines(projectDir);
-        // Write Objects
-        exportGmObjects(projectDir);
-        // Write Rooms
-        exportRooms(projectDir);
-        // Write Game Information
-        exportGameInfo(projectDir);
-        // Write Global settings
-        exportSettings(projectDir);
-        closeRes();
+        try {
+            // Write Sprites
+            exportSprites(projectDir);
+            // Write Backgrounds
+            exportBackgrounds(projectDir);
+            // Write Sounds
+            exportSounds(projectDir);
+            // Write Paths
+            exportPaths(projectDir);
+            // Write Scripts
+            exportScripts(projectDir);
+            // Write Fonts
+            exportFonts(projectDir);
+            // Write Timelines
+            exportTimelines(projectDir);
+            // Write Objects
+            exportGmObjects(projectDir);
+            // Write Rooms
+            exportRooms(projectDir);
+            // Write Game Information
+            exportGameInfo(projectDir);
+            // Write Global settings
+            exportSettings(projectDir);
+            // Write Resource data file
+            writeRes();
+        } catch (IOException exc) {
+            exc.printStackTrace();
+        }
         w.log("Done.");
     }
 
-    private void initResFile() {
-        File res = new File(projectDir, "resources.dat");
-        try {
-            resData = new StreamEncoder(res);
-            resData.write4(LGM.currentFile.resMap.getList(Sprite.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(Background.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(Sound.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(Path.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(Script.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(Font.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(Timeline.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(GmObject.class).size());
-            resData.write4(LGM.currentFile.resMap.getList(Room.class).size());
-        } catch (IOException exc) {
-            System.err.println("Cannot open resources file");
+    private StreamEncoder getOutputStream(File parentFolder, String name) throws IOException {
+        if (parentFolder == null)
+            return getOutputStream(name);
+        if (JAR) {
+            zo.putNextEntry(new ZipEntry("res/" + parentFolder.getName() + "/" + name));
+            return new StreamEncoder(zo);
+        } else {
+            return new StreamEncoder(new FileOutputStream(new File(parentFolder, name)));
         }
     }
 
-    private void addRes(String name, byte type) throws IOException {
-        resData.write(type);
-        writeStr(name, resData);
+    private StreamEncoder getOutputStream(String name) throws IOException {
+        if (JAR) {
+            zo.putNextEntry(new ZipEntry("res/" + name));
+            return new StreamEncoder(zo);
+        } else {
+            return new StreamEncoder(new FileOutputStream(new File(projectDir, name)));
+        }
     }
 
-    private void closeRes() {
+    private void close(OutputStream out) throws IOException {
+        if (JAR) {
+            out.flush();
+            zo.closeEntry();
+        }
+        else
+            out.close();
+    }
+
+    HashMap<String, Byte> map;
+
+    private void addRes(String name, byte type) {
+        map.put(name, type);
+    }
+
+    private void writeRes() {
         try {
-            resData.close();
+            StreamEncoder out = getOutputStream("resources.dat");
+
+            out.write4(LGM.currentFile.resMap.getList(Sprite.class).size());
+            out.write4(LGM.currentFile.resMap.getList(Background.class).size());
+            out.write4(LGM.currentFile.resMap.getList(Sound.class).size());
+            out.write4(LGM.currentFile.resMap.getList(Path.class).size());
+            out.write4(LGM.currentFile.resMap.getList(Script.class).size());
+            out.write4(LGM.currentFile.resMap.getList(Font.class).size());
+            out.write4(LGM.currentFile.resMap.getList(Timeline.class).size());
+            out.write4(LGM.currentFile.resMap.getList(GmObject.class).size());
+            out.write4(LGM.currentFile.resMap.getList(Room.class).size());
+            for (int i : roomIds)
+                out.write4(i);
+            Iterator<String> i = map.keySet().iterator();
+            while (i.hasNext()) {
+                String s = i.next();
+                out.write(map.get(s));
+                writeStr(s, out);
+            }
+            close(out);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private void exportSprites(File parentdir) {
+    private void exportSprites(File parentdir) throws IOException {
         File sprDir = new File(parentdir, "sprites");
-        sprDir.mkdir();
+        if (!JAR) {
+            sprDir.mkdir();
+        }
         ResourceList<Sprite> sprites = LGM.currentFile.resMap.getList(Sprite.class);
         Iterator<Sprite> sprI = sprites.iterator();
 
@@ -202,12 +244,10 @@ public class ProjectExporter {
                 int count = 0;
                 boolean trans = s.get(PSprite.TRANSPARENT);
                 for (int i = 0; i < s.subImages.size(); i++) {
-                    File imf = new File(sprDir, s.getName() + "_sub" + count++ + ".img");
-
+                    String name = s.getName() + "_sub" + count++ + ".img";
                     BufferedImage image = s.subImages.get(i);
-                    writeImage(image, imf, trans);
-
-                    subimgs.add(imf.getName());
+                    writeImage(image, getOutputStream(sprDir, name), trans);
+                    subimgs.add(name);
                 }
             }
             // TRANSPARENT,SHAPE,ALPHA_TOLERANCE,SEPARATE_MASK,SMOOTH_EDGES,PRELOAD,ORIGIN_X,ORIGIN_Y,
@@ -226,11 +266,10 @@ public class ProjectExporter {
             int top = s.properties.get(PSprite.BB_TOP);
             int bottom = s.properties.get(PSprite.BB_BOTTOM);
 
-            File f = new File(sprDir, s.getName() + ".spr");
-
+            String name = s.getName() + ".spr";
             try {
-                addRes(f.getName(), SPRITE);
-                StreamEncoder out = new StreamEncoder(f);
+                addRes(name, SPRITE);
+                StreamEncoder out = getOutputStream(sprDir, name);
                 writeStr(s.getName(), out);
                 out.write4(s.getId());
                 if (s.subImages != null) {
@@ -273,11 +312,11 @@ public class ProjectExporter {
                 out.write4(bottom);
                 // write mask
                 writeSpriteMask(s, shape, out);
-                out.close();
-                w.log("Wrote " + f);
+                close(out);
+                w.log("Wrote " + name);
 
             } catch (IOException e) {
-                System.err.println("Error, can't write sprite " + f);
+                System.err.println("Error, can't write sprite " + name);
             }
         }
     }
@@ -331,21 +370,20 @@ public class ProjectExporter {
     }
 
     private void exportSounds(File parentdir) {
-
         File sndDir = new File(parentdir, "sounds");
-        sndDir.mkdir();
+        if (!JAR)
+            sndDir.mkdir();
         ResourceList<Sound> sounds = LGM.currentFile.resMap.getList(Sound.class);
         Iterator<Sound> sndI = sounds.iterator();
         while (sndI.hasNext()) {
             Sound s = sndI.next();
             String name = s.getName() + s.properties.get(PSound.FILE_TYPE);
-            File sf = new File(sndDir, name);
             try {
-                BufferedOutputStream w = new BufferedOutputStream(new FileOutputStream(sf));
-                w.write(s.data);
-                w.close();
+                StreamEncoder out = getOutputStream(sndDir, name);
+                out.write(s.data);
+                close(out);
             } catch (IOException exc) {
-                System.err.println("Error writing sound " + sf.getName());
+                System.err.println("Error writing sound " + name);
                 exc.printStackTrace();
             }
             // KIND,FILE_TYPE,FILE_NAME,CHORUS,ECHO,FLANGER,GARGLE,REVERB,VOLUME,PAN,PRELOAD
@@ -361,10 +399,10 @@ public class ProjectExporter {
             double pan = s.properties.get(PSound.PAN);
             boolean preload = s.properties.get(PSound.PRELOAD);
 
-            File data = new File(sndDir, s.getName() + ".snd");
+            String dname = s.getName() + ".snd";
             try {
-                addRes(data.getName(), SOUND);
-                StreamEncoder out = new StreamEncoder(data);
+                addRes(dname, SOUND);
+                StreamEncoder out = getOutputStream(sndDir, dname);
                 writeStr(s.getName(), out);
                 out.write4(s.getId());
                 if (kind == SoundKind.NORMAL)
@@ -385,24 +423,29 @@ public class ProjectExporter {
                 out.writeD(volume);
                 out.writeD(pan);
                 writeBool(preload, out);
-                writeStr(sf.getName(), out);
-                out.close();
+                writeStr(name, out);
+                close(out);
             } catch (IOException e) {
-                System.err.println("Error writing sound data " + data);
+                System.err.println("Error writing sound data " + dname);
             }
 
         }
     }
 
-    private void exportBackgrounds(File parentdir) {
+    private void exportBackgrounds(File parentdir) throws IOException {
         File bgDir = new File(parentdir, "backgrounds");
-        bgDir.mkdir();
+        if (!JAR)
+            bgDir.mkdir();
         ResourceList<Background> backgrounds = LGM.currentFile.resMap.getList(Background.class);
         Iterator<Background> bgI = backgrounds.iterator();
         while (bgI.hasNext()) {
             Background b = bgI.next();
-            File bf = new File(bgDir, b.getName() + ".img");
-            writeImage(b.getBackgroundImage(), bf, false);
+            String name = b.getName() + ".img";
+            try {
+                writeImage(b.getBackgroundImage(), getOutputStream(bgDir, name), false);
+            } catch (FileNotFoundException exc) {
+                exc.printStackTrace();
+            }
             // TRANSPARENT,SMOOTH_EDGES,PRELOAD,USE_AS_TILESET,TILE_WIDTH,
             // TILE_HEIGHT,H_OFFSET,V_OFFSET,H_SEP, V_SEP
             boolean transparent = b.properties.get(PBackground.TRANSPARENT);
@@ -416,10 +459,10 @@ public class ProjectExporter {
             int h_sep = b.properties.get(PBackground.H_SEP);
             int v_sep = b.properties.get(PBackground.V_SEP);
 
-            File f = new File(bgDir, b.getName() + ".bg");
+            String n = b.getName() + ".bg";
             try {
-                addRes(f.getName(), BACKGROUND);
-                StreamEncoder out = new StreamEncoder(f);
+                addRes(n, BACKGROUND);
+                StreamEncoder out = getOutputStream(bgDir, n);
                 writeStr(b.getName(), out);
                 out.write4(b.getId());
                 out.write4(b.getWidth());
@@ -434,24 +477,24 @@ public class ProjectExporter {
                 out.write4(v_offset);
                 out.write4(h_sep);
                 out.write4(v_sep);
-                writeStr(bf.getName(), out);
-
-                out.close();
-                w.log("Wrote background " + f);
+                writeStr(name, out);
+                close(out);
+                w.log("Wrote background " + n);
             } catch (IOException exc) {
-                System.err.println("Error writing background data for file " + f);
+                System.err.println("Error writing background data for file " + n);
             }
         }
     }
 
     private void exportPaths(File parentdir) {
         File pathDir = new File(parentdir, "paths");
-        pathDir.mkdir();
+        if (!JAR)
+            pathDir.mkdir();
         ResourceList<Path> paths = LGM.currentFile.resMap.getList(Path.class);
         Iterator<Path> pathI = paths.iterator();
         while (pathI.hasNext()) {
             Path p = pathI.next();
-            File f = new File(pathDir, p.getName() + ".path");
+            String name = p.getName() + ".path";
             // SMOOTH,CLOSED,PRECISION,BACKGROUND_ROOM,SNAP_X,SNAP_Y
             boolean smooth = p.properties.get(PPath.SMOOTH);
             boolean closed = p.properties.get(PPath.CLOSED);
@@ -460,8 +503,8 @@ public class ProjectExporter {
             int points = p.points.size();
 
             try {
-                addRes(f.getName(), PATH);
-                StreamEncoder out = new StreamEncoder(f);
+                addRes(name, PATH);
+                StreamEncoder out = getOutputStream(pathDir, name);
                 writeStr(p.getName(), out);
                 out.write4(p.getId());
                 writeBool(smooth, out);
@@ -474,11 +517,11 @@ public class ProjectExporter {
                     out.write4(pp.getY());
                     out.write4(pp.getSpeed());
                 }
-                out.close();
-                w.log("Exported path " + f);
+                close(out);
+                w.log("Exported path " + name);
 
             } catch (IOException e) {
-                System.err.println("Cannot export path " + f);
+                System.err.println("Cannot export path " + name);
             }
 
         }
@@ -486,22 +529,23 @@ public class ProjectExporter {
 
     private void exportScripts(File parentdir) {
         File scrDir = new File(parentdir, "scripts");
-        scrDir.mkdir();
+        if (!JAR)
+            scrDir.mkdir();
         ResourceList<Script> scrs = LGM.currentFile.resMap.getList(Script.class);
         Iterator<Script> scrI = scrs.iterator();
         while (scrI.hasNext()) {
             Script s = scrI.next();
-            File f = new File(scrDir, s.getName() + ".scr");
+            String name = s.getName() + ".scr";
             try {
-                addRes(f.getName(), SCRIPT);
-                StreamEncoder out = new StreamEncoder(f);
+                addRes(name, SCRIPT);
+                StreamEncoder out = getOutputStream(scrDir, name);
                 writeStr(s.getName(), out);
                 out.write4(s.getId());
                 writeStr(s.getCode(), out);
-                out.close();
-                w.log("Wrote Script " + f);
+                close(out);
+                w.log("Wrote Script " + name);
             } catch (IOException e) {
-                System.err.println("Couldn't write script " + f);
+                System.err.println("Couldn't write script " + name);
                 e.printStackTrace();
             }
 
@@ -510,14 +554,15 @@ public class ProjectExporter {
 
     private void exportFonts(File parentdir) {
         File fntDir = new File(parentdir, "fonts");
-        fntDir.mkdir();
+        if (!JAR)
+            fntDir.mkdir();
         ResourceList<Font> fonts = LGM.currentFile.resMap.getList(Font.class);
         Iterator<Font> fntI = fonts.iterator();
         while (fntI.hasNext()) {
             Font font = fntI.next();
-            File ff = new File(fntDir, font.getName() + ".fnt");
+            String name = font.getName() + ".fnt";
             try {
-                addRes(ff.getName(), FONT);
+                addRes(name, FONT);
                 // resource name,
                 // FONT_NAME,SIZE,BOLD,ITALIC,ANTIALIAS,CHARSET,RANGE_MIN,RANGE_MAX
                 String font_name = font.properties.get(PFont.FONT_NAME);
@@ -529,7 +574,7 @@ public class ProjectExporter {
                 int range_min = font.properties.get(PFont.RANGE_MIN);
                 int range_max = font.properties.get(PFont.RANGE_MAX);
 
-                StreamEncoder out = new StreamEncoder(ff);
+                StreamEncoder out = getOutputStream(fntDir, name);
                 writeStr(font.getName(), out);
                 out.write4(font.getId());
                 writeStr(font_name, out);
@@ -541,12 +586,10 @@ public class ProjectExporter {
                 out.write4(charset);
                 out.write4(range_min);
                 out.write4(range_max);
-
-                out.close();
-
-                w.log("Wrote font data " + ff);
+                close(out);
+                w.log("Wrote font data " + name);
             } catch (IOException exc) {
-                System.err.println("Couldn't open font file for writing: " + ff);
+                System.err.println("Couldn't open font file for writing: " + name);
             }
         }
 
@@ -554,15 +597,16 @@ public class ProjectExporter {
 
     private void exportTimelines(File parentdir) {
         File tlDir = new File(parentdir, "timelines");
-        tlDir.mkdir();
+        if (!JAR)
+            tlDir.mkdir();
         ResourceList<Timeline> tls = LGM.currentFile.resMap.getList(Timeline.class);
         Iterator<Timeline> tlI = tls.iterator();
         while (tlI.hasNext()) {
             Timeline t = tlI.next();
-            File tlf = new File(tlDir, t.getName() + ".tl");
+            String name = t.getName() + ".tl";
             try {
-                addRes(tlf.getName(), TIMELINE);
-                StreamEncoder out = new StreamEncoder(tlf);
+                addRes(name, TIMELINE);
+                StreamEncoder out = getOutputStream(tlDir, name);
                 writeStr(t.getName(), out);
                 out.write4(t.getId());
                 out.write4(t.moments.size());
@@ -571,10 +615,10 @@ public class ProjectExporter {
                     for (Action a : m.actions)
                         writeAction(a, out);
                 }
-                out.close();
-                w.log("Wrote timeline " + tlf);
+                close(out);
+                w.log("Wrote timeline " + name);
             } catch (IOException e) {
-                System.err.println("Can not write timeline data " + tlf);
+                System.err.println("Can not write timeline data " + name);
             }
 
         }
@@ -582,22 +626,22 @@ public class ProjectExporter {
 
     private void exportGmObjects(File parentdir) {
         File objDir = new File(parentdir, "objects");
-        objDir.mkdir();
+        if (!JAR)
+            objDir.mkdir();
         ResourceList<GmObject> objs = LGM.currentFile.resMap.getList(GmObject.class);
         Iterator<GmObject> objI = objs.iterator();
         while (objI.hasNext()) {
             GmObject obj = objI.next();
-            File dat = new File(objDir, obj.getName() + ".obj");
-
+            String name = obj.getName() + ".obj";
             try {
-                addRes(dat.getName(), OBJECT);
+                addRes(name, OBJECT);
                 // SPRITE,SOLID,VISIBLE,DEPTH,PERSISTENT,PARENT,MASK
                 int sprite = getId((ResourceReference<?>) obj.get(PGmObject.SPRITE));
                 boolean solid = obj.properties.get(PGmObject.SOLID);
                 boolean visible = obj.properties.get(PGmObject.VISIBLE);
                 int depth = obj.properties.get(PGmObject.DEPTH);
                 boolean persistent = obj.properties.get(PGmObject.PERSISTENT);
-                StreamEncoder out = new StreamEncoder(dat);
+                StreamEncoder out = getOutputStream(objDir, name);
                 writeStr(obj.getName(), out);
                 out.write4(obj.getId());
                 out.write4(sprite);
@@ -627,22 +671,25 @@ public class ProjectExporter {
                         }
                     }
                 }
-
-                out.close();
-                w.log("Wrote object " + dat);
+                close(out);
+                w.log("Wrote object " + name);
             } catch (IOException e) {
-                System.err.println("Can not write object data " + dat);
+                System.err.println("Can not write object data " + name);
                 e.printStackTrace();
             }
 
         }
     }
 
+    ArrayList<Integer> roomIds;
+
     private void exportRooms(File parentdir) {
         File rmDir = new File(parentdir, "rooms");
-        rmDir.mkdir();
+        if (!JAR)
+            rmDir.mkdir();
 
         ArrayList<String> names = new ArrayList<String>();
+        roomIds = new ArrayList<Integer>();
 
         Enumeration<?> e = LGM.root.preorderEnumeration();
         while (e.hasMoreElements()) {
@@ -655,14 +702,15 @@ public class ProjectExporter {
                     continue;
                 }
                 names.add(r.getName());
+                roomIds.add(r.getId());
             }
         }
         for (String s : names) {
             Room r = LGM.currentFile.resMap.getList(Room.class).get(s);
-            File dat = new File(rmDir, r.getName() + ".room");
+            String name = r.getName() + ".room";
             try {
-                addRes(dat.getName(), ROOM);
-                StreamEncoder out = new StreamEncoder(dat);
+                addRes(name, ROOM);
+                StreamEncoder out = getOutputStream(rmDir, name);
                 // CAPTION,WIDTH,HEIGHT,SNAP_X,SNAP_Y,ISOMETRIC,SPEED,PERSISTENT,BACKGROUND_COLOR,
                 // DRAW_BACKGROUND_COLOR,CREATION_CODE,REMEMBER_WINDOW_SIZE,EDITOR_WIDTH,EDITOR_HEIGHT,SHOW_GRID,
                 // SHOW_OBJECTS,SHOW_TILES,SHOW_BACKGROUNDS,SHOW_FOREGROUNDS,SHOW_VIEWS,DELETE_UNDERLYING_OBJECTS,
@@ -773,21 +821,20 @@ public class ProjectExporter {
                     out.write4(id);
                 }
                 // Rest of the stuff is useless
-
-                out.close();
-                w.log("Wrote room " + dat);
+                close(out);
+                w.log("Wrote room " + name);
             } catch (IOException ex) {
-                System.err.println("Cannot write room " + dat);
+                System.err.println("Cannot write room " + name);
             }
         }
     }
 
     private void exportGameInfo(File parentdir) {
         GameInformation info = LGM.currentFile.gameInfo;
-        File file = new File(parentdir, "Game Information.info");
+        String name = "Game Information.info";
         String text = info.get(PGameInformation.TEXT);
         try {
-            addRes(file.getName(), GAME_INFO);
+            addRes(name, GAME_INFO);
             // BACKGROUND_COLOR,MIMIC_GAME_WINDOW,FORM_CAPTION,LEFT,TOP,WIDTH,HEIGHT,SHOW_BORDER,
             // ALLOW_RESIZE, STAY_ON_TOP,PAUSE_GAME,TEXT
             Color bg_color = info.get(PGameInformation.BACKGROUND_COLOR);
@@ -802,7 +849,7 @@ public class ProjectExporter {
             boolean stay_on_top = info.get(PGameInformation.STAY_ON_TOP);
             boolean pause_game = info.get(PGameInformation.PAUSE_GAME);
 
-            StreamEncoder out = new StreamEncoder(file);
+            StreamEncoder out = getOutputStream(name);
             writeStr(text, out);
             out.write4(bg_color.getRGB());
             writeStr(caption, out);
@@ -815,7 +862,7 @@ public class ProjectExporter {
             writeBool(allow_resize, out);
             writeBool(stay_on_top, out);
             writeBool(pause_game, out);
-            out.close();
+            close(out);
 
             w.log("Wrote Game Information.");
 
@@ -897,10 +944,10 @@ public class ProjectExporter {
         String description = s.get(PGameSettings.DESCRIPTION);
         // ICOFile ico = s.get(PGameSettings.GAME_ICON);
 
-        File f = new File(parentdir, "settings.dat");
+        String name = "settings.dat";
         try {
-            addRes(f.getName(), SETTINGS);
-            StreamEncoder out = new StreamEncoder(f);
+            addRes(name, SETTINGS);
+            StreamEncoder out = getOutputStream(name);
             out.write4(gameId);
             writeBool(startFullscreen, out);
             writeBool(interpolate, out);
@@ -949,8 +996,7 @@ public class ProjectExporter {
             writeStr(product, out);
             writeStr(copyright, out);
             writeStr(description, out);
-
-            out.close();
+            close(out);
         } catch (IOException e) {
             System.err.println("Error writing settings");
             e.printStackTrace();
@@ -1003,7 +1049,7 @@ public class ProjectExporter {
 
     }
 
-    private void writeImage(BufferedImage i, File f, boolean useTransp) {
+    private void writeImage(BufferedImage i, OutputStream s, boolean useTransp) {
 
         int width = i.getWidth();
         int height = i.getHeight();
@@ -1044,9 +1090,8 @@ public class ProjectExporter {
 
             dos.finish();
 
-            StreamEncoder out = new StreamEncoder(f);
-            out.write(baos.toByteArray());
-            out.close();
+            s.write(baos.toByteArray());
+            close(s);
         } catch (IOException e) {
             e.printStackTrace();
         }

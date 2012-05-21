@@ -35,10 +35,10 @@ import org.lateralgm.main.LGM;
 
 public class HoileyDoileyPlugin implements ActionListener {
 
-    public static ProjectExporter exporter;
     protected JMenuItem exportAll;
     protected JMenuItem cleanAll;
     protected JMenuItem runGame;
+    protected JMenuItem exportJar;
     protected JMenu runMenu;
 
     ScheduledExecutorService scheduler;
@@ -46,7 +46,6 @@ public class HoileyDoileyPlugin implements ActionListener {
     public HoileyDoileyPlugin()
         {
             scheduler = Executors.newSingleThreadScheduledExecutor();
-            exporter = new ProjectExporter();
 
             runMenu = new JMenu("Runero");
 
@@ -55,6 +54,9 @@ public class HoileyDoileyPlugin implements ActionListener {
 
             exportAll = new JMenuItem("Export All", getIcon("build"));
             addItem(exportAll);
+            
+            exportJar = new JMenuItem("Export Jar");
+            addItem(exportJar);
 
             cleanAll = new JMenuItem("Clean All", getIcon("clean"));
             addItem(cleanAll);
@@ -87,9 +89,11 @@ public class HoileyDoileyPlugin implements ActionListener {
         if (e.getSource() == exportAll) {
             scheduler.schedule(new ExportCommand(), 0, TimeUnit.SECONDS);
         } else if (e.getSource() == cleanAll) {
-            exporter.clean();
+            ProjectExporter.clean();
         } else if (e.getSource() == runGame) {
             scheduler.schedule(new RunCommand(), 0, TimeUnit.SECONDS);
+        }else if (e.getSource() == exportJar) {
+            scheduler.schedule(new JarExport(), 0, TimeUnit.SECONDS);
         }
     }
 }

@@ -9,7 +9,7 @@ public class RunCommand implements Runnable {
         DebugWindow w = DebugWindow.getWindow();
         w.log("Starting Game. Please start LateralGM in terminal to see potential errors.");
         try {
-            new Runner(HoileyDoileyPlugin.exporter.projectDir);
+            new Runner(ProjectExporter.projectDir);
         } catch (NoClassDefFoundError e) {
             w.log("Error! Cannot find Runero Runner");
             e.printStackTrace();

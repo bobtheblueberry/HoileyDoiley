@@ -22,6 +22,6 @@ public class ExportCommand implements Runnable {
 
     @Override
     public void run() {
-        HoileyDoileyPlugin.exporter.export();
+        new ProjectExporter(false, null).export();
     }
 }
