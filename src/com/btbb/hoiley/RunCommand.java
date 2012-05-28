@@ -7,7 +7,7 @@ public class RunCommand implements Runnable {
 
     public void runGame() {
         DebugWindow w = DebugWindow.getWindow();
-        w.log("Starting Game. Please start LateralGM in terminal to see potential errors.");
+        w.log("Starting Game. Please start LateralGM in terminal to see *potential* errors.");
         try {
             new Runner(ProjectExporter.projectDir);
         } catch (NoClassDefFoundError e) {

@@ -379,7 +379,7 @@ public class ProjectExporter {
             Sound s = sndI.next();
             String name = s.getName() + s.properties.get(PSound.FILE_TYPE);
             try {
-                StreamEncoder out = getOutputStream(sndDir, name);
+                DeflaterOutputStream out = new DeflaterOutputStream(getOutputStream(sndDir, name));
                 out.write(s.data);
                 close(out);
             } catch (IOException exc) {
@@ -423,7 +423,6 @@ public class ProjectExporter {
                 out.writeD(volume);
                 out.writeD(pan);
                 writeBool(preload, out);
-                writeStr(name, out);
                 close(out);
             } catch (IOException e) {
                 System.err.println("Error writing sound data " + dname);
